@@ -28,13 +28,13 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android SDK and tools
+      - name: Install Android SDK
         run: |
           # 设置 Android SDK 路径
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 创建 SDK 目录结构
+          # 创建目录结构
           sudo mkdir -p $ANDROID_HOME
           sudo chown -R runner:runner $ANDROID_HOME
           
@@ -46,7 +46,7 @@ jobs:
             lib32z1 \
             zlib1g-dev
 
-          # 下载命令行工具
+          # 下载命令行工具（新版结构）
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME/cmdline-tools
           mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
@@ -57,44 +57,37 @@ jobs:
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
           echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          # 安装组件
+          # 安装组件（关键修复：使用新版路径）
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "cmdline-tools;latest"
 
-          # 修复工具路径问题
-          sudo ln -sf $ANDROID_HOME/build-tools/33.0.2/aidl /usr/local/bin/aidl
-          sudo ln -sf $ANDROID_HOME/build-tools/33.0.2/aapt2 /usr/local/bin/aapt2
-          sudo chmod +x /usr/local/bin/{aidl,aapt2}
+          # 创建必要的符号链接（兼容旧版路径）
+          mkdir -p $ANDROID_HOME/tools
+          ln -s $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
 
-      - name: Configure Buildozer environment
+      - name: Configure Buildozer
         run: |
-          # 确保 Buildozer 目录存在（关键修复）
+          # 强制 Buildozer 使用我们安装的 SDK
           mkdir -p ~/.buildozer/android/platform
-          
-          # 下载 NDK（仅当目录不存在时）
-          NDK_VERSION="r25b"
-          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-$NDK_VERSION"
-          
-          if [ ! -d "$NDK_DIR" ]; then
-            echo "下载 NDK..."
-            wget https://dl.google.com/android/repository/android-ndk-$NDK_VERSION-linux.zip
-            echo "解压 NDK..."
-            unzip -q android-ndk-$NDK_VERSION-linux.zip -d ~/.buildozer/android/platform/
-            rm android-ndk-$NDK_VERSION-linux.zip
-          fi
-          
-          # 配置 SDK 符号链接
           rm -rf ~/.buildozer/android/platform/android-sdk
-          ln -s $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
+          ln -s /usr/local/lib/android/sdk ~/.buildozer/android/platform/android-sdk
+          
+          # 预下载 NDK
+          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r25b"
+          if [ ! -d "$NDK_DIR" ]; then
+            wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+            unzip -q android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
+            rm android-ndk-r25b-linux.zip
+          fi
 
       - name: Initialize Buildozer
         run: |
           buildozer init
-          # 修正spec文件路径
-          sed -i "s|^android.sdk_path =.*|android.sdk_path = $ANDROID_HOME|" buildozer.spec
+          # 强制修正路径配置
+          sed -i "s|^android.sdk_path =.*|android.sdk_path = /usr/local/lib/android/sdk|" buildozer.spec
           sed -i "s|^android.ndk_path =.*|android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b|" buildozer.spec
           sed -i "s|^p4a.branch =.*|p4a.branch = develop|" buildozer.spec
 
@@ -109,12 +102,10 @@ jobs:
 
       - name: Build APK
         run: |
-          # 调试信息
-          echo "=== NDK 目录内容 ==="
-          ls -la ~/.buildozer/android/platform/android-ndk-r25b
-          
-          echo "=== SDK 工具 ==="
-          ls -la $ANDROID_HOME/build-tools/33.0.2/
+          # 调试：验证工具路径
+          echo "=== sdkmanager 路径 ==="
+          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+          ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager
           
           # 构建 APK
           buildozer -v android debug
