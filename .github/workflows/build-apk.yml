@@ -15,7 +15,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.9'
 
       - name: Install dependencies
         run: |
@@ -23,15 +23,15 @@ jobs:
           pip install Cython==0.29.33 buildozer
 
       - name: Set up Android SDK and accept licenses
-        uses: android-actions/setup-android-sdk@v3
+        uses: android-actions/configure-android-sdk@v2  # 关键修正：改用 v2 版本
         with:
           android-sdk-version: 33
-          android-components: |
+          packages: |  # 注意字段从 android-components 改为 packages
             build-tools;33.0.2
             platforms;android-33
             tools
         env:
-          ANDROID_ACCEPT_LICENSE: "yes"
+          ANDROID_ACCEPT_LICENSE: "yes"  # 自动接受许可证
 
       - name: Initialize Buildozer
         run: buildozer init
