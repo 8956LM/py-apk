@@ -37,7 +37,7 @@ jobs:
             lib32z1 \
             zlib1g-dev \
             libncurses6:i386 \
-            libstdc++12:i386 \
+            libstdc++12 \
             libx11-6:i386
           echo "系统依赖安装完成"
 
@@ -156,7 +156,7 @@ jobs:
             echo "最后100行日志："
             tail -n 100 build.log
             echo "常见问题排查："
-            echo "1. 检查是否缺少依赖库：sudo apt-get install libc6:i386 libstdc++12:i386"
+            echo "1. 检查是否缺少依赖库：sudo apt-get install libc6:i386 libstdc++12"
             echo "2. 确认ANDROID_HOME路径正确：ls -la $ANDROID_HOME"
             echo "3. 验证平台工具版本：确保android.api=33对应platforms;android-33"
             echo "4. 检查NDK安装：ls -la /home/runner/.buildozer/android/platform/android-ndk-r25b"
