@@ -49,18 +49,33 @@ jobs:
             autogen \
             autoconf \
             automake \
-            libtool
+            libtool \
+            libtool-bin  # 确保安装libtool命令行工具
           
           # 验证依赖项是否安装成功
           echo "=== 依赖项验证 ==="
           dpkg -l | grep -E "libtool|autoconf|automake"
           
+          # 检查libtool命令是否可用
           if ! command -v libtool &> /dev/null; then
-            echo "错误: libtool 未安装"
+            echo "尝试通过libtoolize访问libtool功能"
+            if command -v libtoolize &> /dev/null; then
+              echo "libtoolize可用，创建符号链接"
+              sudo ln -s "$(which libtoolize)" /usr/bin/libtool
+            else
+              echo "错误: libtool和libtoolize均未找到"
+              exit 1
+            fi
+          fi
+          
+          # 再次验证libtool命令
+          if ! command -v libtool &> /dev/null; then
+            echo "错误: libtool 未正确安装"
             exit 1
           fi
           
           echo "系统依赖安装完成"
+          echo "libtool版本: $(libtool --version | head -n1)"
 
       - name: Create buildozer.spec
         run: |
@@ -183,7 +198,7 @@ jobs:
           echo "=== Autotools 验证 ==="
           autoconf --version
           automake --version
-          libtool --version  # 这行之前可能导致错误，现在确保libtool已安装
+          libtool --version  # 验证libtool命令
 
       - name: Install Buildozer and dependencies
         run: |
@@ -241,4 +256,29 @@ jobs:
           ANDROID_NDK_HOME=$ANDROID_NDK_HOME \
           ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT \
           ANDROID_NDK=$ANDROID_NDK \
-          PATH=$ANDROID_HOME/cmd
+          PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH \
+          buildozer -v -f android debug 2>&1 | tee build.log
+          
+          # 构建后验证
+          if [ ! -f bin/*.apk ]; then
+            echo "=== 构建失败分析 ==="
+            echo "最后100行日志："
+            tail -n 100 build.log
+            echo "常见问题排查："
+            echo "1. 检查是否缺少依赖库：sudo apt-get install libc6:i386 libstdc++-12-dev libstdc++-12-dev:i386"
+            echo "2. 确认ANDROID_HOME路径正确：ls -la $ANDROID_HOME"
+            echo "3. 验证平台工具版本：确保android.api=33对应platforms;android-33"
+            echo "4. 检查NDK安装：ls -la /home/runner/.buildozer/android/platform/android-ndk-r25b"
+            exit 1
+          fi
+
+          mkdir -p artifacts
+          cp bin/*.apk artifacts/
+          echo "APK构建成功！"
+
+      - name: Upload artifacts
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: apk-artifacts
+          path: artifacts/
