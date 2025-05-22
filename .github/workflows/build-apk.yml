@@ -12,6 +12,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Clean environment
+        run: |
+          # 彻底清理旧配置
+          rm -f buildozer.spec
+          rm -rf .buildozer
+          rm -rf bin
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -22,27 +29,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install Cython==0.29.33 buildozer
 
-      - name: Clean existing config
+      - name: Create fresh buildozer.spec
         run: |
-          # 删除可能存在的旧配置文件
-          rm -f buildozer.spec
-          rm -rf .buildozer
-
-      - name: Initialize Buildozer
-        run: |
-          buildozer init
-          # 删除可能重复的配置项
-          sed -i '/^log_level/d' buildozer.spec
-          sed -i '/^android.sdk_path/d' buildozer.spec
-          sed -i '/^android.ndk_path/d' buildozer.spec
-
-      - name: Configure Buildozer
-        run: |
-          # 写入唯一配置项
-          cat <<EOF >> buildozer.spec
-          [buildozer]
-          log_level = 2
-          
+          # 创建全新的 spec 文件
+          cat <<EOF > buildozer.spec
           [app]
           title = MyApp
           package.name = pythonapp
@@ -55,7 +45,18 @@ jobs:
           android.api = 33
           p4a.branch = develop
           android.accept_sdk_license = True
+
+          [buildozer]
+          log_level = 2
           EOF
+
+      - name: Verify spec file
+        run: |
+          echo "=== buildozer.spec 内容 ==="
+          cat buildozer.spec
+          echo "=== 检查重复段 ==="
+          grep -n "\[buildozer\]" buildozer.spec
+          grep -n "\[app\]" buildozer.spec
 
       - name: Set up JDK
         uses: actions/setup-java@v3
@@ -65,15 +66,12 @@ jobs:
 
       - name: Install Android SDK
         run: |
-          # 设置 Android SDK 路径
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 创建目录结构
           sudo mkdir -p $ANDROID_HOME
           sudo chown -R runner:runner $ANDROID_HOME
           
-          # 安装必要依赖
           sudo apt-get update && sudo apt-get install -y \
             unzip \
             libc6-i386 \
@@ -81,29 +79,25 @@ jobs:
             lib32z1 \
             zlib1g-dev
 
-          # 下载命令行工具
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME/cmdline-tools
           mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
           rm commandlinetools-linux-*.zip
 
-          # 接受许可证
           mkdir -p $ANDROID_HOME/licenses
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
           echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          # 安装组件
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "cmdline-tools;latest"
 
-          # 创建兼容旧版路径的目录结构
           mkdir -p $ANDROID_HOME/tools
           ln -s $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
 
-      - name: Pre-download NDK
+      - name: Install NDK
         run: |
           mkdir -p ~/.buildozer/android/platform
           wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
@@ -112,28 +106,30 @@ jobs:
 
       - name: Build APK
         run: |
-          # 验证配置
-          echo "=== buildozer.spec 内容 ==="
-          cat buildozer.spec
+          # 确保 bin 目录存在
+          mkdir -p bin
           
-          echo "=== 检查重复配置项 ==="
-          grep -n "log_level" buildozer.spec || echo "没有重复的 log_level"
-          
-          # 执行构建
+          echo "=== 开始构建 ==="
           buildozer -v android debug 2>&1 | tee build.log
           
-          # 检查错误
           if grep -q "ERROR:" build.log; then
-            echo "构建过程中发现错误！"
-            cat build.log | grep "ERROR:"
+            echo "构建失败！错误信息："
+            grep -A 10 -B 5 "ERROR:" build.log
             exit 1
           fi
           
-          # 收集产物
+          # 检查生成的 APK
+          if [ ! -f bin/*.apk ]; then
+            echo "未找到 APK 文件！构建日志："
+            cat build.log
+            exit 1
+          fi
+
           mkdir -p artifacts
           cp bin/*.apk artifacts/
 
       - name: Upload artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: apk-artifacts
