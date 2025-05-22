@@ -176,6 +176,16 @@ jobs:
           echo "android_sdk_dir = $ANDROID_HOME" >> ~/.buildozer/android/platform/buildozer.ini
           echo "android_ndk_dir = /home/runner/.buildozer/android/platform/android-ndk-r25b" >> ~/.buildozer/android/platform/buildozer.ini
           
+          # 添加环境变量，确保Buildozer使用正确的sdkmanager路径
+          echo "export ANDROID_HOME=$ANDROID_HOME" >> ~/.bashrc
+          echo "export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> ~/.bashrc
+          source ~/.bashrc
+          
+          # 验证sdkmanager路径
+          echo "=== sdkmanager路径验证 ==="
+          which sdkmanager
+          ls -la $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          
           # 执行构建并捕获详细日志
           buildozer -v android debug 2>&1 | tee build.log
           
@@ -190,6 +200,8 @@ jobs:
             echo "3. 验证平台工具版本：确保android.api=33对应platforms;android-33"
             echo "4. 检查NDK安装：ls -la /home/runner/.buildozer/android/platform/android-ndk-r25b"
             echo "5. 检查Cython是否正确安装：pip show cython"
+            echo "6. 验证sdkmanager路径：which sdkmanager"
+            echo "7. 确认新的sdkmanager路径：ls -la $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
             exit 1
           fi
 
