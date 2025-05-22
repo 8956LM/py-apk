@@ -20,8 +20,18 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # 添加 Cython 和其他必要依赖
           pip install Cython==0.29.33 buildozer
+
+      - name: Set up Android SDK and accept licenses
+        uses: android-actions/setup-android-sdk@v3
+        with:
+          android-sdk-version: 33
+          android-components: |
+            build-tools;33.0.2
+            platforms;android-33
+            tools
+        env:
+          ANDROID_ACCEPT_LICENSE: "yes"
 
       - name: Initialize Buildozer
         run: buildozer init
