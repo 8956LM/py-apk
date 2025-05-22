@@ -23,6 +23,11 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Enable i386 architecture
+        run: |
+          sudo dpkg --add-architecture i386
+          echo "i386 架构已启用"
+
       - name: Install system dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y \
