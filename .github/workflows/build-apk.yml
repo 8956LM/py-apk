@@ -12,6 +12,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Debug - List project directory
+        run: |
+          ls -la
+
       - name: Clean environment
         run: |
           sudo rm -rf /usr/local/lib/android/sdk
@@ -68,6 +72,18 @@ jobs:
           log_level = 2
           EOF
           echo "buildozer.spec 创建成功"
+
+      - name: Create Gradle wrapper properties
+        run: |
+          mkdir -p gradle/wrapper
+          cat <<EOF > gradle/wrapper/gradle-wrapper.properties
+          distributionBase=GRADLE_USER_HOME
+          distributionPath=wrapper/dists
+          distributionUrl=https://services.gradle.org/distributions/gradle-7.4.2-bin.zip
+          zipStoreBase=GRADLE_USER_HOME
+          zipStorePath=wrapper/dists
+          EOF
+          echo "gradle-wrapper.properties 创建成功"
 
       - name: Set up JDK
         uses: actions/setup-java@v3
