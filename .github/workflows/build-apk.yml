@@ -17,6 +17,7 @@ jobs:
           rm -f buildozer.spec
           rm -rf .buildozer
           rm -rf bin
+          sudo rm -rf /usr/local/lib/android/sdk
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -28,7 +29,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install Cython==0.29.33 buildozer
 
-      - name: Create buildozer.spec
+      - name: Create fresh buildozer.spec
         run: |
           cat <<EOF > buildozer.spec
           [app]
@@ -56,13 +57,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android SDK (Fixed)
+      - name: Install Android SDK (Final Fix)
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 清理旧安装
-          sudo rm -rf $ANDROID_HOME
+          # 全新安装
           sudo mkdir -p $ANDROID_HOME
           sudo chown -R runner:runner $ANDROID_HOME
           
@@ -75,16 +75,17 @@ jobs:
 
           # 下载命令行工具
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME/cmdline-tools
+          unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME
           
-          # 创建正确的目录结构 (关键修复)
+          # 创建正确的目录结构（关键修复）
           mkdir -p $ANDROID_HOME/cmdline-tools/latest
-          mv $ANDROID_HOME/cmdline-tools/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
+          mv $ANDROID_HOME/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
           rm commandlinetools-linux-*.zip
 
-          # 创建兼容旧路径的符号链接 (关键修复)
+          # 创建完整的工具链符号链接（关键修复）
           mkdir -p $ANDROID_HOME/tools
-          ln -s $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
+          ln -sf $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
+          ln -sf $ANDROID_HOME/cmdline-tools/latest $ANDROID_HOME/tools
 
           # 配置环境变量
           echo "$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_PATH
@@ -111,26 +112,25 @@ jobs:
           unzip -q android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
           rm android-ndk-r25b-linux.zip
 
-      - name: Build APK (Fixed)
+      - name: Build APK (Final Fix)
         run: |
           mkdir -p bin
           
-          echo "=== 验证SDK路径 ==="
-          echo "sdkmanager路径: $(which sdkmanager)"
-          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
-          ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager || echo "旧路径不存在（正常）"
-          
-          # 强制Buildozer使用正确路径 (关键修复)
-          echo "=== 覆盖Buildozer配置 ==="
+          echo "=== 强制配置Buildozer ==="
           mkdir -p ~/.buildozer/android/platform
-          echo "sdkmanager路径: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" > ~/.buildozer/android/platform/buildozer.ini
+          echo "[buildozer]" > ~/.buildozer/android/platform/buildozer.ini
+          echo "android_sdk_path = /usr/local/lib/android/sdk" >> ~/.buildozer/android/platform/buildozer.ini
+          echo "android_ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b" >> ~/.buildozer/android/platform/buildozer.ini
           
           echo "=== 开始构建 ==="
           buildozer -v android debug 2>&1 | tee build.log
           
           if [ ! -f bin/*.apk ]; then
-            echo "构建失败！关键错误："
-            grep -A 15 -B 5 "ERROR:" build.log || cat build.log
+            echo "=== 构建失败 ==="
+            echo "最后20行日志："
+            tail -n 20 build.log
+            echo "可能的错误："
+            grep -A 5 -B 5 -i "error" build.log || echo "未找到明确错误信息"
             exit 1
           fi
 
