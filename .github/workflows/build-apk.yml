@@ -32,17 +32,13 @@ jobs:
         run: |
           cat <<EOF > buildozer.spec
           [app]
-          # 应用配置
           title = MyApp
           package.name = pythonapp
           package.domain = com.example
           source.dir = .
           requirements = python3,kivy
-          
-          # 必须的版本配置（修复关键错误）
           version = 0.1
           
-          # Android 配置
           android.sdk_path = /usr/local/lib/android/sdk
           android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
           android.build_tools_version = 33.0.2
@@ -54,23 +50,19 @@ jobs:
           log_level = 2
           EOF
 
-      - name: Verify spec file
-        run: |
-          echo "=== buildozer.spec 验证 ==="
-          grep -A2 "\[app\]" buildozer.spec
-          grep "version" buildozer.spec || echo "错误：缺少版本配置"
-
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android SDK
+      - name: Install Android SDK (Fixed)
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
+          # 清理旧安装
+          sudo rm -rf $ANDROID_HOME
           sudo mkdir -p $ANDROID_HOME
           sudo chown -R runner:runner $ANDROID_HOME
           
@@ -81,23 +73,32 @@ jobs:
             lib32z1 \
             zlib1g-dev
 
+          # 下载新版命令行工具
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
-          unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME/cmdline-tools
-          mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
+          unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME
           rm commandlinetools-linux-*.zip
 
+          # 创建正确的目录结构 (关键修复)
+          mkdir -p $ANDROID_HOME/cmdline-tools/latest
+          mv $ANDROID_HOME/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
+          
+          # 配置环境变量
+          echo "$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_PATH
+
+          # 接受许可证
           mkdir -p $ANDROID_HOME/licenses
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
           echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
+          # 安装组件 (使用新路径)
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "cmdline-tools;latest"
 
-          mkdir -p $ANDROID_HOME/tools
-          ln -s $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
+          # 验证安装
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list
 
       - name: Install NDK
         run: |
@@ -110,18 +111,21 @@ jobs:
         run: |
           mkdir -p bin
           
+          echo "=== 验证SDK工具 ==="
+          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/
+          which sdkmanager || echo "sdkmanager未找到"
+          
           echo "=== 开始构建 ==="
           buildozer -v android debug 2>&1 | tee build.log
           
           if [ $? -ne 0 ]; then
-            echo "构建失败！最后10行日志："
-            tail -n 10 build.log
+            echo "构建失败！关键错误："
+            grep -A 5 -B 5 "ERROR:" build.log || cat build.log
             exit 1
           fi
           
           if [ ! -f bin/*.apk ]; then
-            echo "错误：未生成APK文件！完整日志："
-            cat build.log
+            echo "错误：未生成APK文件！"
             exit 1
           fi
 
@@ -129,7 +133,6 @@ jobs:
           cp bin/*.apk artifacts/
 
       - name: Upload artifacts
-        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: apk-artifacts
