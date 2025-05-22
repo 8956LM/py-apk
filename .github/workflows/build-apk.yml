@@ -257,14 +257,8 @@ jobs:
           ls -la $ANDROID_NDK_HOME/ndk-build
           
           # 执行构建并捕获详细日志
-          # 使用--force参数强制重新检查所有配置
-          ANDROID_HOME=$ANDROID_HOME \
-          ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT \
-          ANDROID_NDK_HOME=$ANDROID_NDK_HOME \
-          ANDROID_NDK_ROOT=$ANDROID_NDK_HOME \
-          ANDROID_NDK=$ANDROID_NDK \
-          PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH \
-          buildozer -v -f android debug 2>&1 | tee build.log
+          # 修复：移除存储路径中的空格和注释
+          buildozer -v -f android debug --storage-dir=/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a 2>&1 | tee build.log
           
           # 构建后验证
           if [ ! -f bin/*.apk ]; then
@@ -288,4 +282,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk-artifacts
-          path: artifacts/
+          path: artifacts/    
