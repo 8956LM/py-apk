@@ -34,6 +34,10 @@ jobs:
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
+          # 创建 SDK 目录结构
+          sudo mkdir -p $ANDROID_HOME
+          sudo chown -R runner:runner $ANDROID_HOME
+          
           # 安装必要依赖
           sudo apt-get update && sudo apt-get install -y \
             unzip \
@@ -63,24 +67,26 @@ jobs:
           # 修复工具路径问题
           sudo ln -sf $ANDROID_HOME/build-tools/33.0.2/aidl /usr/local/bin/aidl
           sudo ln -sf $ANDROID_HOME/build-tools/33.0.2/aapt2 /usr/local/bin/aapt2
-          sudo ln -sf $ANDROID_HOME/build-tools/33.0.2/zipalign /usr/local/bin/zipalign
-          sudo chmod +x /usr/local/bin/{aidl,aapt2,zipalign}
+          sudo chmod +x /usr/local/bin/{aidl,aapt2}
 
       - name: Configure Buildozer environment
         run: |
-          # 配置NDK路径（修复关键错误）
+          # 确保 Buildozer 目录存在（关键修复）
+          mkdir -p ~/.buildozer/android/platform
+          
+          # 下载 NDK（仅当目录不存在时）
           NDK_VERSION="r25b"
           NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-$NDK_VERSION"
           
-          # 下载并解压NDK（跳过已存在的）
           if [ ! -d "$NDK_DIR" ]; then
+            echo "下载 NDK..."
             wget https://dl.google.com/android/repository/android-ndk-$NDK_VERSION-linux.zip
-            unzip -q android-ndk-$NDK_VERSION-linux.zip -d $HOME/.buildozer/android/platform/
+            echo "解压 NDK..."
+            unzip -q android-ndk-$NDK_VERSION-linux.zip -d ~/.buildozer/android/platform/
             rm android-ndk-$NDK_VERSION-linux.zip
           fi
-
-          # 配置SDK路径
-          mkdir -p ~/.buildozer/android/platform
+          
+          # 配置 SDK 符号链接
           rm -rf ~/.buildozer/android/platform/android-sdk
           ln -s $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
 
@@ -104,13 +110,13 @@ jobs:
       - name: Build APK
         run: |
           # 调试信息
-          echo "=== NDK PATH ==="
-          ls -la $HOME/.buildozer/android/platform/android-ndk-r25b
+          echo "=== NDK 目录内容 ==="
+          ls -la ~/.buildozer/android/platform/android-ndk-r25b
           
-          echo "=== SDK TOOLS ==="
+          echo "=== SDK 工具 ==="
           ls -la $ANDROID_HOME/build-tools/33.0.2/
           
-          # 构建APK
+          # 构建 APK
           buildozer -v android debug
           
           # 收集产物
