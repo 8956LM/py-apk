@@ -60,40 +60,37 @@ jobs:
             "platforms;android-33" \
             "cmdline-tools;latest"
 
-          # 修复工具路径问题（关键修复）
+          # 修复工具路径问题
           sudo ln -sf $ANDROID_HOME/build-tools/33.0.2/aidl /usr/local/bin/aidl
           sudo ln -sf $ANDROID_HOME/build-tools/33.0.2/aapt2 /usr/local/bin/aapt2
           sudo ln -sf $ANDROID_HOME/build-tools/33.0.2/zipalign /usr/local/bin/zipalign
           sudo chmod +x /usr/local/bin/{aidl,aapt2,zipalign}
 
-          # 验证安装
-          ls -la $ANDROID_HOME/build-tools/33.0.2/
-          which aidl && aidl --help >/dev/null 2>&1 || echo "AIDL验证失败"
-
       - name: Configure Buildozer environment
         run: |
-          # 确保使用系统PATH
-          echo "PATH=$PATH:/usr/local/bin" >> $GITHUB_ENV
+          # 配置NDK路径（修复关键错误）
+          NDK_VERSION="r25b"
+          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-$NDK_VERSION"
           
-          # 配置Buildozer缓存路径
+          # 下载并解压NDK（跳过已存在的）
+          if [ ! -d "$NDK_DIR" ]; then
+            wget https://dl.google.com/android/repository/android-ndk-$NDK_VERSION-linux.zip
+            unzip -q android-ndk-$NDK_VERSION-linux.zip -d $HOME/.buildozer/android/platform/
+            rm android-ndk-$NDK_VERSION-linux.zip
+          fi
+
+          # 配置SDK路径
           mkdir -p ~/.buildozer/android/platform
           rm -rf ~/.buildozer/android/platform/android-sdk
           ln -s $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
 
-          # 预下载NDK避免超时
-          NDK_VERSION="r25b"
-          wget https://dl.google.com/android/repository/android-ndk-$NDK_VERSION-linux.zip -P ~/.buildozer/android/platform/
-          unzip -q ~/.buildozer/android/platform/android-ndk-$NDK_VERSION-linux.zip -d ~/.buildozer/android/platform/
-          mv ~/.buildozer/android/platform/android-ndk-$NDK_VERSION ~/.buildozer/android/platform/android-ndk-$NDK_VERSION
-
       - name: Initialize Buildozer
         run: |
           buildozer init
-          # 强制修正spec文件路径
+          # 修正spec文件路径
           sed -i "s|^android.sdk_path =.*|android.sdk_path = $ANDROID_HOME|" buildozer.spec
           sed -i "s|^android.ndk_path =.*|android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b|" buildozer.spec
           sed -i "s|^p4a.branch =.*|p4a.branch = develop|" buildozer.spec
-          sed -i "s|^#android.accept_sdk_license =.*|android.accept_sdk_license = True|" buildozer.spec
 
       - name: Modify buildozer.spec
         run: |
@@ -107,14 +104,14 @@ jobs:
       - name: Build APK
         run: |
           # 调试信息
-          echo "=== ENVIRONMENT ==="
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "PATH=$PATH"
-          which aidl aapt2 zipalign
+          echo "=== NDK PATH ==="
+          ls -la $HOME/.buildozer/android/platform/android-ndk-r25b
           
-          # 构建APK（启用详细日志）
-          buildozer -v android debug 2>&1 | tee build.log
-          grep -i "error" build.log && exit 1 || true
+          echo "=== SDK TOOLS ==="
+          ls -la $ANDROID_HOME/build-tools/33.0.2/
+          
+          # 构建APK
+          buildozer -v android debug
           
           # 收集产物
           mkdir -p artifacts
