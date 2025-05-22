@@ -242,30 +242,19 @@ jobs:
           echo "=== NDK验证 ==="
           ls -la $ANDROID_NDK_HOME/ndk-build
           
-          # 手动更新 configure.ac
-          LIBFFI_DIR="$GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi/arm64-v8a__ndk_target_23/libffi"
-          if [ -d "$LIBFFI_DIR" ]; then
-            cd $LIBFFI_DIR
-            autoreconf -ivf
-            cd $GITHUB_WORKSPACE
-          fi
-
-          # 提取公共编译参数
-          COMMON_FLAGS="-Wsign-compare -DNDEBUG -g -fwrapv -O3 -Wall -std=c11 -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=implicit-function-declaration -fvisibility=hidden"
-          INCLUDE_DIRS="-I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Include/internal -IObjects -IInclude -IPython -I. -I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Include"
-          DECIMAL_FLAGS="-I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/_decimal/libmpdec -DCONFIG_64=1 -DANSI=1 -DHAVE_UINT128_T=1 -fPIC"
-
-          # 添加错误日记3中的编译命令
-          gcc $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE_BUILTIN -c /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/pwdmodule.c -o Modules/pwdmodule.o
-          gcc $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE_BUILTIN -c /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/xxsubtype.c -o Modules/xxsubtype.o
-          gcc -c $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE -o Programs/_freeze_module.o /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Programs/_freeze_module.c
-          gcc -c $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE -o Modules/getpath_noop.o /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/getpath_noop.c
+          # 确保构建目录存在
+          mkdir -p $GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules
           
-          DECIMAL_FILES=(basearith constants context convolute crt difradix2 fnt fourstep io mpalloc mpdecimal)
-          for file in "${DECIMAL_FILES[@]}"; do
-            gcc -c $COMMON_FLAGS $INCLUDE_DIRS $DECIMAL_FLAGS -o Modules/_decimal/libmpdec/$file.o /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/_decimal/libmpdec/$file.c
-          done
-
+          # 修复：手动创建必要的构建目录结构
+          HOSTPYTHON_DIR="$GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3"
+          if [ ! -d "$HOSTPYTHON_DIR/Modules" ]; then
+            mkdir -p "$HOSTPYTHON_DIR/Modules"
+            # 复制必要的Python源文件
+            cp -r /usr/include/python3.10/* "$HOSTPYTHON_DIR/Include/" || true
+            cp -r /usr/lib/python3.10/config-3.10-x86_64-linux-gnu/* "$HOSTPYTHON_DIR/" || true
+          fi
+          
+          # 构建命令
           cd $GITHUB_WORKSPACE
           buildozer -v -f android debug --storage-dir=$GITHUB_WORKSPACE/.buildozer/android/platform/build
           
