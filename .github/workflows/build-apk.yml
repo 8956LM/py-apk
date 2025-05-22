@@ -52,13 +52,12 @@ jobs:
             automake \
             libtool \
             libtool-bin \
-            openjdk-11-jdk  # 确保有兼容的JDK版本
+            openjdk-11-jdk
           
           # 验证依赖项是否安装成功
           echo "=== 依赖项验证 ==="
           dpkg -l | grep -E "libtool|autoconf|automake|openjdk-11"
           
-          # 检查libtool命令是否可用
           if ! command -v libtool &> /dev/null; then
             echo "尝试通过libtoolize访问libtool功能"
             if command -v libtoolize &> /dev/null; then
@@ -70,7 +69,6 @@ jobs:
             fi
           fi
           
-          # 再次验证libtool命令
           if ! command -v libtool &> /dev/null; then
             echo "错误: libtool 未正确安装"
             exit 1
@@ -93,13 +91,13 @@ jobs:
           
           # Android配置
           android.sdk_path = /usr/local/lib/android/sdk
-          android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
+          android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
           android.build_tools_version = 33.0.2
           android.api = 33
           android.minapi = 21
           android.ndk_api = 23
           android.accept_sdk_license = True
-          android.archs = arm64-v8a, armeabi-v7a  # 明确指定架构
+          android.archs = arm64-v8a,armeabi-v7a
 
           [buildozer]
           log_level = 2
@@ -121,7 +119,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
-          java-version: '11'  # 切换到OpenJDK 11，与Android构建更兼容
+          java-version: '11'
           distribution: 'temurin'
           cache: 'gradle'
 
@@ -131,46 +129,37 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 创建干净的目录结构
           sudo mkdir -p $ANDROID_HOME
           sudo chown -R runner:runner $ANDROID_HOME
           
-          # 安装命令行工具
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
           
-          # 移动文件到正确位置
           mkdir -p $ANDROID_HOME/cmdline-tools/latest
           mv /tmp/cmdline-tools/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
           rm -rf /tmp/cmdline-tools*
 
-          # 配置环境变量
           echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_ENV
 
-          # 接受许可证
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses || true
 
-          # 安装核心组件
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "cmdline-tools;latest" \
-            "ndk;25.2.9519653"  # 安装与配置匹配的NDK版本
+            "ndk;25.2.9519653"
 
-          # 验证安装
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list --sdk_root=$ANDROID_HOME
           echo "Android SDK 安装验证通过"
 
       - name: Configure NDK
         run: |
-          # 使用SDK管理器安装的NDK版本，而不是手动下载的
           ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.2.9519653
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_HOME" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_NDK_HOME" >> $GITHUB_ENV
           
-          # 移除旧的NDK目录（如果存在）
           rm -rf /home/runner/.buildozer/android/platform/android-ndk-r25b
           
           echo "NDK 配置完成"
@@ -209,11 +198,9 @@ jobs:
 
       - name: Install Buildozer and dependencies
         run: |
-          # 先安装Cython
           pip install --upgrade cython
           echo "Cython 安装完成，版本: $(cython --version)"
           
-          # 再安装Buildozer和Python依赖
           pip install --upgrade buildozer python-for-android
           buildozer --version
           p4a --version
@@ -222,7 +209,6 @@ jobs:
         run: |
           mkdir -p $GITHUB_WORKSPACE/bin
           
-          # 确保所有环境变量在当前shell中也可用
           export ANDROID_HOME=$ANDROID_HOME
           export ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT
           export ANDROID_NDK_HOME=$ANDROID_NDK_HOME
@@ -230,7 +216,6 @@ jobs:
           export ANDROID_NDK=$ANDROID_NDK_HOME
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
           
-          # 验证环境变量
           echo "=== 构建环境验证 ==="
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
@@ -239,30 +224,23 @@ jobs:
           echo "ANDROID_NDK=$ANDROID_NDK"
           echo "PATH=$PATH"
           
-          # 验证sdkmanager路径
           echo "=== sdkmanager路径验证 ==="
           which sdkmanager
           ls -la $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
           
-          # 创建符号链接，使旧路径指向新路径
           mkdir -p $ANDROID_HOME/tools/bin
           ln -s $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager
           echo "创建了从旧路径到新路径的符号链接"
           
-          # 验证符号链接
           echo "=== 符号链接验证 ==="
           ls -la $ANDROID_HOME/tools/bin/sdkmanager
           
-          # 验证NDK
           echo "=== NDK验证 ==="
           ls -la $ANDROID_NDK_HOME/ndk-build
           
-          # 执行构建并捕获详细日志
-          # 使用$GITHUB_WORKSPACE确保路径正确，移除所有空格和注释
           cd $GITHUB_WORKSPACE
-          buildozer -v -f android debug --storage-dir=$GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a 2>&1 | tee build.log
+          buildozer -v -f android debug --storage-dir=$GITHUB_WORKSPACE/.buildozer/android/platform/build
           
-          # 构建后验证
           if [ ! -f $GITHUB_WORKSPACE/bin/*.apk ]; then
             echo "=== 构建失败分析 ==="
             echo "最后200行日志："
@@ -284,4 +262,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: apk-artifacts
-          path: $GITHUB_WORKSPACE/artifacts/    
+          path: $GITHUB_WORKSPACE/artifacts/
