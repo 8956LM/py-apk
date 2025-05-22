@@ -46,7 +46,7 @@ jobs:
             lib32z1 \
             zlib1g-dev
 
-          # 下载命令行工具（新版结构）
+          # 下载命令行工具
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME/cmdline-tools
           mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
@@ -57,23 +57,23 @@ jobs:
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
           echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          # 安装组件（关键修复：使用新版路径）
+          # 安装组件
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "cmdline-tools;latest"
 
-          # 创建必要的符号链接（兼容旧版路径）
+          # 创建兼容旧版路径的目录结构
           mkdir -p $ANDROID_HOME/tools
           ln -s $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
 
-      - name: Configure Buildozer
+      - name: Configure Buildozer environment
         run: |
-          # 强制 Buildozer 使用我们安装的 SDK
+          # 完全禁用 Buildozer 的自动 SDK 安装
           mkdir -p ~/.buildozer/android/platform
-          rm -rf ~/.buildozer/android/platform/android-sdk
-          ln -s /usr/local/lib/android/sdk ~/.buildozer/android/platform/android-sdk
+          echo "android.sdk_path = /usr/local/lib/android/sdk" > ~/.buildozer/android/platform/buildozer.ini
+          echo "android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b" >> ~/.buildozer/android/platform/buildozer.ini
           
           # 预下载 NDK
           NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r25b"
@@ -86,10 +86,12 @@ jobs:
       - name: Initialize Buildozer
         run: |
           buildozer init
-          # 强制修正路径配置
+          # 强制修正所有路径配置
           sed -i "s|^android.sdk_path =.*|android.sdk_path = /usr/local/lib/android/sdk|" buildozer.spec
           sed -i "s|^android.ndk_path =.*|android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b|" buildozer.spec
           sed -i "s|^p4a.branch =.*|p4a.branch = develop|" buildozer.spec
+          sed -i "s|^#android.accept_sdk_license =.*|android.accept_sdk_license = True|" buildozer.spec
+          sed -i "s|^#log_level =.*|log_level = 2|" buildozer.spec
 
       - name: Modify buildozer.spec
         run: |
@@ -102,20 +104,27 @@ jobs:
 
       - name: Build APK
         run: |
-          # 调试：验证工具路径
-          echo "=== sdkmanager 路径 ==="
+          # 调试信息
+          echo "=== 验证 SDK 路径 ==="
           ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
           ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager
           
+          echo "=== 构建环境 ==="
+          buildozer --version
+          buildozer android --help
+          
           # 构建 APK
-          buildozer -v android debug
+          buildozer -v android debug 2>&1 | tee build.log
+          grep -i "error" build.log && exit 1 || true
           
           # 收集产物
           mkdir -p artifacts
           cp bin/*.apk artifacts/
 
-      - name: Upload APK
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: python-app-apk
-          path: artifacts/
+          name: apk-artifacts
+          path: |
+            artifacts/
+            build.log
