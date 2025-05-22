@@ -50,6 +50,16 @@ jobs:
             autoconf \
             automake \
             libtool
+          
+          # 验证依赖项是否安装成功
+          echo "=== 依赖项验证 ==="
+          dpkg -l | grep -E "libtool|autoconf|automake"
+          
+          if ! command -v libtool &> /dev/null; then
+            echo "错误: libtool 未安装"
+            exit 1
+          fi
+          
           echo "系统依赖安装完成"
 
       - name: Create buildozer.spec
@@ -173,7 +183,7 @@ jobs:
           echo "=== Autotools 验证 ==="
           autoconf --version
           automake --version
-          libtool --version
+          libtool --version  # 这行之前可能导致错误，现在确保libtool已安装
 
       - name: Install Buildozer and dependencies
         run: |
@@ -231,34 +241,4 @@ jobs:
           ANDROID_NDK_HOME=$ANDROID_NDK_HOME \
           ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT \
           ANDROID_NDK=$ANDROID_NDK \
-          PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH \
-          buildozer -v --force android debug 2>&1 | tee build.log
-          
-          # 构建后验证
-          if [ ! -f bin/*.apk ]; then
-            echo "=== 构建失败分析 ==="
-            echo "最后100行日志："
-            tail -n 100 build.log
-            echo "常见问题排查："
-            echo "1. 检查是否缺少依赖库：sudo apt-get install libc6:i386 libstdc++-12-dev libstdc++-12-dev:i386"
-            echo "2. 确认ANDROID_HOME路径正确：ls -la $ANDROID_HOME"
-            echo "3. 验证平台工具版本：确保android.api=33对应platforms;android-33"
-            echo "4. 检查NDK安装：ls -la $ANDROID_NDK_HOME"
-            echo "5. 检查Cython是否正确安装：pip show cython"
-            echo "6. 验证sdkmanager路径：which sdkmanager"
-            echo "7. 确认新的sdkmanager路径：ls -la $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-            echo "8. 检查符号链接：ls -la $ANDROID_HOME/tools/bin/sdkmanager"
-            echo "9. 检查NDK构建工具：ls -la $ANDROID_NDK_HOME/ndk-build"
-            exit 1
-          fi
-
-          mkdir -p artifacts
-          cp bin/*.apk artifacts/
-          echo "APK构建成功！"
-
-      - name: Upload artifacts
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: apk-artifacts
-          path: artifacts/
+          PATH=$ANDROID_HOME/cmd
