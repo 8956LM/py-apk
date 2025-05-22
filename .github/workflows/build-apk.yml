@@ -50,11 +50,12 @@ jobs:
             autoconf \
             automake \
             libtool \
-            libtool-bin  # 确保安装libtool命令行工具
+            libtool-bin \
+            openjdk-11-jdk  # 确保有兼容的JDK版本
           
           # 验证依赖项是否安装成功
           echo "=== 依赖项验证 ==="
-          dpkg -l | grep -E "libtool|autoconf|automake"
+          dpkg -l | grep -E "libtool|autoconf|automake|openjdk-11"
           
           # 检查libtool命令是否可用
           if ! command -v libtool &> /dev/null; then
@@ -76,6 +77,7 @@ jobs:
           
           echo "系统依赖安装完成"
           echo "libtool版本: $(libtool --version | head -n1)"
+          echo "Java版本: $(java -version 2>&1 | head -n1)"
 
       - name: Create buildozer.spec
         run: |
@@ -96,6 +98,7 @@ jobs:
           android.minapi = 21
           android.ndk_api = 23
           android.accept_sdk_license = True
+          android.archs = arm64-v8a, armeabi-v7a  # 明确指定架构
 
           [buildozer]
           log_level = 2
@@ -117,7 +120,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
-          java-version: '17'
+          java-version: '11'  # 切换到OpenJDK 11，与Android构建更兼容
           distribution: 'temurin'
           cache: 'gradle'
 
@@ -151,41 +154,41 @@ jobs:
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
-            "cmdline-tools;latest"
+            "cmdline-tools;latest" \
+            "ndk;25.2.9519653"  # 安装与配置匹配的NDK版本
 
           # 验证安装
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list --sdk_root=$ANDROID_HOME
           echo "Android SDK 安装验证通过"
 
-      - name: Install NDK
+      - name: Configure NDK
         run: |
-          mkdir -p ~/.buildozer/android/platform
-          wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-          unzip -q android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
-          rm android-ndk-r25b-linux.zip
+          # 使用SDK管理器安装的NDK版本，而不是手动下载的
+          ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.2.9519653
+          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_HOME" >> $GITHUB_ENV
+          echo "ANDROID_NDK=$ANDROID_NDK_HOME" >> $GITHUB_ENV
           
-          # 设置NDK环境变量
-          echo "ANDROID_NDK_HOME=/home/runner/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
-          echo "ANDROID_NDK_ROOT=/home/runner/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
-          echo "ANDROID_NDK=/home/runner/.buildozer/android/platform/android-ndk-r25b" >> $GITHUB_ENV
+          # 移除旧的NDK目录（如果存在）
+          rm -rf /home/runner/.buildozer/android/platform/android-ndk-r25b
           
-          echo "NDK r25b 安装完成"
+          echo "NDK 配置完成"
 
       - name: Pre-build verification
         run: |
           echo "=== 关键路径验证 ==="
           ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
           ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager || echo "旧路径不存在（符合预期）"
-          ls -la /home/runner/.buildozer/android/platform/android-ndk-r25b/ndk-build || echo "NDK 构建工具不存在"
+          ls -la /usr/local/lib/android/sdk/ndk/25.2.9519653/ndk-build
           
           echo "=== 环境变量 ==="
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          echo "JAVA_HOME=$JAVA_HOME"
-          echo "PATH=$PATH"
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
           echo "ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT"
           echo "ANDROID_NDK=$ANDROID_NDK"
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "PATH=$PATH"
           
           echo "=== SDK组件列表 ==="
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list --sdk_root=$ANDROID_HOME
@@ -198,7 +201,10 @@ jobs:
           echo "=== Autotools 验证 ==="
           autoconf --version
           automake --version
-          libtool --version  # 验证libtool命令
+          libtool --version
+          
+          echo "=== Java 验证 ==="
+          java -version
 
       - name: Install Buildozer and dependencies
         run: |
@@ -206,9 +212,10 @@ jobs:
           pip install --upgrade cython
           echo "Cython 安装完成，版本: $(cython --version)"
           
-          # 再安装Buildozer
-          pip install --upgrade buildozer
+          # 再安装Buildozer和Python依赖
+          pip install --upgrade buildozer python-for-android
           buildozer --version
+          p4a --version
 
       - name: Build APK
         run: |
@@ -217,9 +224,9 @@ jobs:
           # 确保所有环境变量在当前shell中也可用
           export ANDROID_HOME=$ANDROID_HOME
           export ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT
-          export ANDROID_NDK_HOME=/home/runner/.buildozer/android/platform/android-ndk-r25b
-          export ANDROID_NDK_ROOT=/home/runner/.buildozer/android/platform/android-ndk-r25b
-          export ANDROID_NDK=/home/runner/.buildozer/android/platform/android-ndk-r25b
+          export ANDROID_NDK_HOME=$ANDROID_NDK_HOME
+          export ANDROID_NDK_ROOT=$ANDROID_NDK_HOME
+          export ANDROID_NDK=$ANDROID_NDK_HOME
           export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH
           
           # 验证环境变量
@@ -247,14 +254,14 @@ jobs:
           
           # 验证NDK
           echo "=== NDK验证 ==="
-          ls -la $ANDROID_NDK_HOME/ndk-build || echo "NDK构建工具不存在"
+          ls -la $ANDROID_NDK_HOME/ndk-build
           
           # 执行构建并捕获详细日志
           # 使用--force参数强制重新检查所有配置
           ANDROID_HOME=$ANDROID_HOME \
           ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT \
           ANDROID_NDK_HOME=$ANDROID_NDK_HOME \
-          ANDROID_NDK_ROOT=$ANDROID_NDK_ROOT \
+          ANDROID_NDK_ROOT=$ANDROID_NDK_HOME \
           ANDROID_NDK=$ANDROID_NDK \
           PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH \
           buildozer -v -f android debug 2>&1 | tee build.log
@@ -262,13 +269,13 @@ jobs:
           # 构建后验证
           if [ ! -f bin/*.apk ]; then
             echo "=== 构建失败分析 ==="
-            echo "最后100行日志："
-            tail -n 100 build.log
+            echo "最后200行日志："
+            tail -n 200 build.log
             echo "常见问题排查："
             echo "1. 检查是否缺少依赖库：sudo apt-get install libc6:i386 libstdc++-12-dev libstdc++-12-dev:i386"
             echo "2. 确认ANDROID_HOME路径正确：ls -la $ANDROID_HOME"
             echo "3. 验证平台工具版本：确保android.api=33对应platforms;android-33"
-            echo "4. 检查NDK安装：ls -la /home/runner/.buildozer/android/platform/android-ndk-r25b"
+            echo "4. 检查NDK安装：ls -la $ANDROID_NDK_HOME"
             exit 1
           fi
 
