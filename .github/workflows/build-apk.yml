@@ -45,7 +45,11 @@ jobs:
             libstdc++-12-dev:i386 \
             libx11-6:i386 \
             gcc-multilib \
-            g++-multilib
+            g++-multilib \
+            autogen \
+            autoconf \
+            automake \
+            libtool
           echo "系统依赖安装完成"
 
       - name: Create buildozer.spec
@@ -165,6 +169,11 @@ jobs:
           g++ --version
           echo "32位库验证:"
           dpkg -l | grep libstdc++
+          
+          echo "=== Autotools 验证 ==="
+          autoconf --version
+          automake --version
+          libtool --version
 
       - name: Install Buildozer and dependencies
         run: |
