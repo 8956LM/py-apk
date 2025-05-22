@@ -22,6 +22,41 @@ jobs:
           python -m pip install --upgrade pip
           pip install Cython==0.29.33 buildozer
 
+      - name: Clean existing config
+        run: |
+          # 删除可能存在的旧配置文件
+          rm -f buildozer.spec
+          rm -rf .buildozer
+
+      - name: Initialize Buildozer
+        run: |
+          buildozer init
+          # 删除可能重复的配置项
+          sed -i '/^log_level/d' buildozer.spec
+          sed -i '/^android.sdk_path/d' buildozer.spec
+          sed -i '/^android.ndk_path/d' buildozer.spec
+
+      - name: Configure Buildozer
+        run: |
+          # 写入唯一配置项
+          cat <<EOF >> buildozer.spec
+          [buildozer]
+          log_level = 2
+          
+          [app]
+          title = MyApp
+          package.name = pythonapp
+          package.domain = com.example
+          source.dir = .
+          requirements = python3,kivy
+          android.sdk_path = /usr/local/lib/android/sdk
+          android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
+          android.build_tools_version = 33.0.2
+          android.api = 33
+          p4a.branch = develop
+          android.accept_sdk_license = True
+          EOF
+
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
@@ -68,30 +103,6 @@ jobs:
           mkdir -p $ANDROID_HOME/tools
           ln -s $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
 
-      - name: Configure Buildozer
-        run: |
-          # 初始化 Buildozer 环境
-          buildozer init
-          
-          # 修正 buildozer.spec 配置
-          cat <<EOF >> buildozer.spec
-          # 强制使用我们安装的 SDK
-          android.sdk_path = /usr/local/lib/android/sdk
-          android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b
-          p4a.branch = develop
-          android.accept_sdk_license = True
-          log_level = 2
-          
-          # 应用配置
-          title = MyApp
-          package.name = pythonapp
-          package.domain = com.example
-          source.dir = .
-          requirements = python3,kivy
-          android.build_tools_version = 33.0.2
-          android.api = 33
-          EOF
-
       - name: Pre-download NDK
         run: |
           mkdir -p ~/.buildozer/android/platform
@@ -101,15 +112,15 @@ jobs:
 
       - name: Build APK
         run: |
-          # 验证环境
-          echo "=== Buildozer 版本 ==="
-          buildozer --version
+          # 验证配置
+          echo "=== buildozer.spec 内容 ==="
+          cat buildozer.spec
           
-          echo "=== Android 工具路径 ==="
-          ls -la /usr/local/lib/android/sdk/build-tools/33.0.2/
+          echo "=== 检查重复配置项 ==="
+          grep -n "log_level" buildozer.spec || echo "没有重复的 log_level"
           
-          # 执行构建（使用完整命令格式）
-          buildozer -v android debug build 2>&1 | tee build.log
+          # 执行构建
+          buildozer -v android debug 2>&1 | tee build.log
           
           # 检查错误
           if grep -q "ERROR:" build.log; then
