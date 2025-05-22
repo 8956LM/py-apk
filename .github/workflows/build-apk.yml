@@ -156,8 +156,13 @@ jobs:
           echo "32位库验证:"
           dpkg -l | grep libstdc++
 
-      - name: Install Buildozer
+      - name: Install Buildozer and dependencies
         run: |
+          # 先安装Cython
+          pip install --upgrade cython
+          echo "Cython 安装完成，版本: $(cython --version)"
+          
+          # 再安装Buildozer
           pip install --upgrade buildozer
           buildozer --version
 
@@ -184,6 +189,7 @@ jobs:
             echo "2. 确认ANDROID_HOME路径正确：ls -la $ANDROID_HOME"
             echo "3. 验证平台工具版本：确保android.api=33对应platforms;android-33"
             echo "4. 检查NDK安装：ls -la /home/runner/.buildozer/android/platform/android-ndk-r25b"
+            echo "5. 检查Cython是否正确安装：pip show cython"
             exit 1
           fi
 
