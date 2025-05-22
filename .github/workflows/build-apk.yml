@@ -22,7 +22,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install Cython==0.29.33 buildozer
 
-      - name: Set up JDK (Required for Android)
+      - name: Set up JDK
         uses: actions/setup-java@v3
         with:
           java-version: '17'
@@ -34,7 +34,7 @@ jobs:
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 安装必要的32位库
+          # 安装必要依赖
           sudo apt-get update && sudo apt-get install -y \
             unzip \
             libc6-i386 \
@@ -42,38 +42,46 @@ jobs:
             lib32z1 \
             zlib1g-dev
 
-          # 下载命令行工具（兼容Java 17的版本）
+          # 下载命令行工具
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME/cmdline-tools
           mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
           rm commandlinetools-linux-*.zip
 
-          # 预先接受所有许可证
+          # 接受许可证
           mkdir -p $ANDROID_HOME/licenses
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
           echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          # 安装构建工具和平台（强制指定SDK根目录）
+          # 安装组件
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "cmdline-tools;latest"
 
-          # 验证安装并确保aidl可用
-          ls -la $ANDROID_HOME/build-tools/33.0.2/
-          $ANDROID_HOME/build-tools/33.0.2/aidl --version || echo "AIDL验证失败"
+          # 验证安装
+          $ANDROID_HOME/build-tools/33.0.2/aidl --version
 
-          # 确保Buildozer能找到SDK路径
+      - name: Configure Buildozer environment
+        run: |
+          # 强制 Buildozer 使用我们安装的 SDK
           mkdir -p ~/.buildozer/android/platform
+          rm -rf ~/.buildozer/android/platform/android-sdk
           ln -s $ANDROID_HOME ~/.buildozer/android/platform/android-sdk
+          
+          # 预下载 NDK 避免超时
+          wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip -P ~/.buildozer/android/platform/
+          unzip -q ~/.buildozer/android/platform/android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
+          mv ~/.buildozer/android/platform/android-ndk-r25b ~/.buildozer/android/platform/android-ndk-r25b
 
       - name: Initialize Buildozer
         run: |
           buildozer init
-          # 强制指定SDK路径
+          # 强制修正 spec 文件路径
           sed -i "s|^android.sdk_path =.*|android.sdk_path = $ANDROID_HOME|" buildozer.spec
-          sed -i "s|^android.ndk_path =.*|#android.ndk_path =|" buildozer.spec  # 注释掉NDK路径（可选）
+          sed -i "s|^android.ndk_path =.*|android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b|" buildozer.spec
+          sed -i "s|^p4a.branch =.*|p4a.branch = develop|" buildozer.spec
 
       - name: Modify buildozer.spec
         run: |
@@ -86,18 +94,20 @@ jobs:
 
       - name: Build APK
         run: |
-          # 调试：显示环境变量
+          # 调试信息
+          echo "=== ENVIRONMENT ==="
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "PATH=$PATH"
+          ls -la $ANDROID_HOME/cmdline-tools/latest/bin/
           
-          # 构建APK
+          # 构建 APK
           buildozer -v android debug
           
           # 收集产物
           mkdir -p artifacts
           cp bin/*.apk artifacts/
 
-      - name: Upload APK as artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: python-app-apk
