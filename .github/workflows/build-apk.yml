@@ -54,6 +54,10 @@ jobs:
             libtool-bin \
             openjdk-11-jdk
           
+          # 更新 autotools
+          sudo apt-get install -y autoconf automake libtool
+          sudo apt-get upgrade -y autoconf automake libtool
+          
           # 验证依赖项是否安装成功
           echo "=== 依赖项验证 ==="
           dpkg -l | grep -E "libtool|autoconf|automake|openjdk-11"
@@ -238,12 +242,13 @@ jobs:
           echo "=== NDK验证 ==="
           ls -la $ANDROID_NDK_HOME/ndk-build
           
-          # 进入 libffi 目录更新过时宏
-          cd $GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi/arm64-v8a__ndk_target_23/libffi
-          autoupdate
-          
-          # 处理未定义的宏
-          sed -i '1i m4_pattern_allow([LT_SYS_SYMBOL_USCORE])' configure.ac
+          # 手动更新 configure.ac
+          LIBFFI_DIR="$GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi/arm64-v8a__ndk_target_23/libffi"
+          if [ -d "$LIBFFI_DIR" ]; then
+            cd $LIBFFI_DIR
+            autoreconf -ivf
+            cd $GITHUB_WORKSPACE
+          fi
           
           cd $GITHUB_WORKSPACE
           buildozer -v -f android debug --storage-dir=$GITHUB_WORKSPACE/.buildozer/android/platform/build
