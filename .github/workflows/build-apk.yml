@@ -16,16 +16,25 @@ jobs:
         run: |
           sudo rm -rf /usr/local/lib/android/sdk
           rm -rf .buildozer bin
+          echo "环境清理完成"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install Cython==0.29.33 buildozer
+          sudo apt-get update && sudo apt-get install -y \
+            unzip \
+            libc6-i386 \
+            lib32stdc++6 \
+            lib32z1 \
+            zlib1g-dev \
+            libncurses5:i386 \
+            libstdc++6:i386 \
+            libx11-6:i386
+          echo "系统依赖安装完成"
 
       - name: Create buildozer.spec
         run: |
@@ -38,16 +47,20 @@ jobs:
           requirements = python3,kivy
           version = 0.1
           
+          # Android配置
           android.sdk_path = /usr/local/lib/android/sdk
           android.ndk_path = /home/runner/.buildozer/android/platform/android-ndk-r25b
           android.build_tools_version = 33.0.2
           android.api = 33
+          android.minapi = 21
+          android.ndk_api = 23
           p4a.branch = develop
           android.accept_sdk_license = True
 
           [buildozer]
           log_level = 2
           EOF
+          echo "buildozer.spec 创建成功"
 
       - name: Set up JDK
         uses: actions/setup-java@v3
@@ -55,7 +68,7 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Install Android SDK (关键修复)
+      - name: Install Android SDK (优化版)
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
@@ -64,39 +77,30 @@ jobs:
           sudo mkdir -p $ANDROID_HOME
           sudo chown -R runner:runner $ANDROID_HOME
           
-          sudo apt-get update && sudo apt-get install -y \
-            unzip \
-            libc6-i386 \
-            lib32stdc++6 \
-            lib32z1 \
-            zlib1g-dev
-
-          # 下载命令行工具（分步处理）
-          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O cmdline-tools.zip
+          # 分步安装命令行工具
+          wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
           
-          # 创建目标目录
+          # 精确移动文件（关键修复）
           mkdir -p $ANDROID_HOME/cmdline-tools/latest
-          
-          # 解压到临时目录再转移
-          unzip -q cmdline-tools.zip -d /tmp/cmdline-tools
           mv /tmp/cmdline-tools/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
-          rm -rf cmdline-tools.zip /tmp/cmdline-tools
+          rm -rf /tmp/cmdline-tools*
 
-          # 创建兼容旧路径的符号链接
+          # 创建全兼容路径
           ln -sf $ANDROID_HOME/cmdline-tools/latest $ANDROID_HOME/tools
           ln -sf $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
 
           # 配置环境变量
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_PATH
+          echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_ENV
 
           # 接受许可证
           mkdir -p $ANDROID_HOME/licenses
           echo -e "\n24333f8a63b6825ea9c5514f83c2829b004d1fee" > $ANDROID_HOME/licenses/android-sdk-license
           echo -e "\n84831b9409646a918e30573bab4c9c91346d8abd" > $ANDROID_HOME/licenses/android-sdk-preview-license
 
-          # 安装组件（添加超时重试）
-          for i in {1..3}; do
-            yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
+          # 安装核心组件（带重试机制）
+          for retry in {1..3}; do
+            $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
               "platform-tools" \
               "build-tools;33.0.2" \
               "platforms;android-33" \
@@ -105,40 +109,61 @@ jobs:
 
           # 验证安装
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list
+          echo "Android SDK 安装验证通过"
 
-      - name: Install NDK
+      - name: Install NDK (兼容方案)
         run: |
           mkdir -p ~/.buildozer/android/platform
           wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
           unzip -q android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
+          mv ~/.buildozer/android/platform/android-ndk-r25b ~/.buildozer/android/platform/android-ndk-r25b
           rm android-ndk-r25b-linux.zip
+          echo "NDK r25b 安装完成"
 
-      - name: Build APK
+      - name: Pre-build verification
+        run: |
+          echo "=== 关键路径验证 ==="
+          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+          ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager || echo "旧路径不存在（符合预期）"
+          
+          echo "=== 环境变量 ==="
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "PATH=$PATH"
+          
+          echo "=== SDK组件列表 ==="
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list --sdk_root=$ANDROID_HOME
+
+      - name: Build APK (稳定版)
         run: |
           mkdir -p bin
           
-          echo "=== 路径验证 ==="
-          echo "sdkmanager路径: $(which sdkmanager)"
-          ls -la $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager
+          # 覆盖Buildozer缓存配置
+          mkdir -p ~/.buildozer/android/platform
+          echo "[buildozer]" > ~/.buildozer/android/platform/buildozer.ini
+          echo "android_sdk_dir = $ANDROID_HOME" >> ~/.buildozer/android/platform/buildozer.ini
+          echo "android_ndk_dir = /home/runner/.buildozer/android/platform/android-ndk-r25b" >> ~/.buildozer/android/platform/buildozer.ini
           
-          echo "=== 开始构建 ==="
+          # 执行构建并捕获详细日志
           buildozer -v android debug 2>&1 | tee build.log
           
+          # 构建后验证
           if [ ! -f bin/*.apk ]; then
-            echo "=== 构建失败诊断 ==="
-            echo "最后关键日志："
-            tail -n 50 build.log | grep -A 20 -B 20 -i "error"
-            echo "可能的解决方案："
-            echo "1. 检查buildozer.spec中的android.api版本是否与安装的平台一致"
-            echo "2. 确认ANDROID_HOME路径正确"
-            echo "3. 查看是否缺少系统依赖库"
+            echo "=== 构建失败分析 ==="
+            echo "最后50行日志："
+            tail -n 50 build.log
+            echo "常见问题排查："
+            echo "1. 检查是否缺少x86_64架构库：sudo apt-get install libc6:i386 libstdc++6:i386"
+            echo "2. 确认ANDROID_HOME路径正确：ls -la $ANDROID_HOME"
+            echo "3. 验证平台工具版本：确保android.api=33对应platforms;android-33"
             exit 1
           fi
 
           mkdir -p artifacts
           cp bin/*.apk artifacts/
+          echo "APK构建成功！"
 
       - name: Upload artifacts
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: apk-artifacts
