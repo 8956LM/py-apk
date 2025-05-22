@@ -238,6 +238,13 @@ jobs:
           echo "=== NDK验证 ==="
           ls -la $ANDROID_NDK_HOME/ndk-build
           
+          # 进入 libffi 目录更新过时宏
+          cd $GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi/arm64-v8a__ndk_target_23/libffi
+          autoupdate
+          
+          # 处理未定义的宏
+          sed -i '1i m4_pattern_allow([LT_SYS_SYMBOL_USCORE])' configure.ac
+          
           cd $GITHUB_WORKSPACE
           buildozer -v -f android debug --storage-dir=$GITHUB_WORKSPACE/.buildozer/android/platform/build
           
