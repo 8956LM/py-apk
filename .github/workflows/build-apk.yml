@@ -249,7 +249,22 @@ jobs:
             autoreconf -ivf
             cd $GITHUB_WORKSPACE
           fi
-          
+
+          # 提取公共编译参数
+          COMMON_FLAGS="-Wsign-compare -DNDEBUG -g -fwrapv -O3 -Wall -std=c11 -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -Werror=implicit-function-declaration -fvisibility=hidden"
+          INCLUDE_DIRS="-I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Include/internal -IObjects -IInclude -IPython -I. -I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Include"
+          DECIMAL_FLAGS="-I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/_decimal/libmpdec -DCONFIG_64=1 -DANSI=1 -DHAVE_UINT128_T=1 -fPIC"
+
+          # 示例编译命令，可根据实际情况调整
+          gcc $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE_BUILTIN -c /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/pwdmodule.c -o Modules/pwdmodule.o
+          gcc $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE_BUILTIN -c /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/xxsubtype.c -o Modules/xxsubtype.o
+
+          # 处理 _decimal 相关文件
+          DECIMAL_FILES=(basearith constants context convolute crt difradix2 fnt fourstep io mpalloc mpdecimal)
+          for file in "${DECIMAL_FILES[@]}"; do
+            gcc -c $COMMON_FLAGS $INCLUDE_DIRS $DECIMAL_FLAGS -o Modules/_decimal/libmpdec/$file.o /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/_decimal/libmpdec/$file.c
+          done
+
           cd $GITHUB_WORKSPACE
           buildozer -v -f android debug --storage-dir=$GITHUB_WORKSPACE/.buildozer/android/platform/build
           
