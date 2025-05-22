@@ -52,7 +52,8 @@ jobs:
             automake \
             libtool \
             libtool-bin \
-            openjdk-11-jdk
+            openjdk-11-jdk \
+            ccache
           
           # 更新 autotools
           sudo apt-get install -y autoconf automake libtool
@@ -105,6 +106,7 @@ jobs:
 
           [buildozer]
           log_level = 2
+          warn_on_root = False
           EOF
           echo "buildozer.spec 创建成功"
 
@@ -202,12 +204,36 @@ jobs:
 
       - name: Install Buildozer and dependencies
         run: |
-          pip install --upgrade cython
+          pip install --upgrade cython buildozer python-for-android
           echo "Cython 安装完成，版本: $(cython --version)"
-          
-          pip install --upgrade buildozer python-for-android
           buildozer --version
           p4a --version
+
+      - name: Fix Python-for-Android patches
+        run: |
+          # 修复hostpython3补丁问题
+          P4A_DIR="$GITHUB_WORKSPACE/.buildozer/android/platform/python-for-android"
+          if [ -d "$P4A_DIR" ]; then
+            # 更新hostpython3补丁以兼容Python 3.11.5
+            cat <<EOF > "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches/pyconfig_detection.patch"
+            diff -Nru Python-3.11.5/Lib/site.py Python-3.11.5-new/Lib/site.py
+            --- Python-3.11.5/Lib/site.py    2023-08-24 12:48:38.000000000 -0700
+            +++ Python-3.11.5-new/Lib/site.py        2023-08-24 12:52:46.000000000 -0700
+            @@ -300,6 +300,9 @@
+                 if ENABLE_USER_SITE and os.path.isdir(user_site):
+                     addsitedir(user_site, known_paths)
+             
+            +    # Add the build directory to sys.path
+            +    addsitedir(os.path.dirname(os.path.abspath(__file__)), known_paths)
+            +
+                 # Set sys.argv[0]
+                 if sys.argv[0] == '-c':
+                     # -c option: set sys.argv[0] to '' (issue #18124)
+            EOF
+            echo "已更新hostpython3补丁文件"
+          else
+            echo "未找到python-for-android目录，跳过补丁更新"
+          fi
 
       - name: Build APK
         run: |
@@ -244,15 +270,6 @@ jobs:
           
           # 确保构建目录存在
           mkdir -p $GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules
-          
-          # 修复：手动创建必要的构建目录结构
-          HOSTPYTHON_DIR="$GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3"
-          if [ ! -d "$HOSTPYTHON_DIR/Modules" ]; then
-            mkdir -p "$HOSTPYTHON_DIR/Modules"
-            # 复制必要的Python源文件
-            cp -r /usr/include/python3.10/* "$HOSTPYTHON_DIR/Include/" || true
-            cp -r /usr/lib/python3.10/config-3.10-x86_64-linux-gnu/* "$HOSTPYTHON_DIR/" || true
-          fi
           
           # 构建命令
           cd $GITHUB_WORKSPACE
