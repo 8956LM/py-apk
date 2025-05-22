@@ -73,16 +73,18 @@ jobs:
             lib32z1 \
             zlib1g-dev
 
-          # 下载命令行工具 (关键修复)
+          # 下载命令行工具
           wget https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
           unzip -q commandlinetools-linux-*.zip -d $ANDROID_HOME/cmdline-tools
           
-          # 修正目录结构 (不再需要移动)
-          if [ -d "$ANDROID_HOME/cmdline-tools/cmdline-tools" ]; then
-            mv $ANDROID_HOME/cmdline-tools/cmdline-tools $ANDROID_HOME/cmdline-tools/latest
-          fi
-          
+          # 创建正确的目录结构 (关键修复)
+          mkdir -p $ANDROID_HOME/cmdline-tools/latest
+          mv $ANDROID_HOME/cmdline-tools/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
           rm commandlinetools-linux-*.zip
+
+          # 创建兼容旧路径的符号链接 (关键修复)
+          mkdir -p $ANDROID_HOME/tools
+          ln -s $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
 
           # 配置环境变量
           echo "$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_PATH
@@ -109,20 +111,26 @@ jobs:
           unzip -q android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
           rm android-ndk-r25b-linux.zip
 
-      - name: Build APK
+      - name: Build APK (Fixed)
         run: |
           mkdir -p bin
           
-          echo "=== 验证环境 ==="
-          ls -la /usr/local/lib/android/sdk/cmdline-tools/
-          which sdkmanager && sdkmanager --list
+          echo "=== 验证SDK路径 ==="
+          echo "sdkmanager路径: $(which sdkmanager)"
+          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+          ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager || echo "旧路径不存在（正常）"
+          
+          # 强制Buildozer使用正确路径 (关键修复)
+          echo "=== 覆盖Buildozer配置 ==="
+          mkdir -p ~/.buildozer/android/platform
+          echo "sdkmanager路径: $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" > ~/.buildozer/android/platform/buildozer.ini
           
           echo "=== 开始构建 ==="
           buildozer -v android debug 2>&1 | tee build.log
           
           if [ ! -f bin/*.apk ]; then
-            echo "构建失败！错误日志："
-            grep -A 10 -B 5 "ERROR:" build.log || cat build.log
+            echo "构建失败！关键错误："
+            grep -A 15 -B 5 "ERROR:" build.log || cat build.log
             exit 1
           fi
 
