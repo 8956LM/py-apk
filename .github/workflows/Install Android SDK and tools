@@ -1,0 +1,18 @@
+- name: Install Android SDK and tools
+  run: |
+    # 安装必要的系统依赖
+    sudo apt-get update && sudo apt-get install -y --no-install-recommends \
+      android-sdk \
+      android-sdk-platform-tools \
+      ant \
+      openjdk-11-jdk
+
+    # 接受所有许可证（非交互式）
+    echo y | sdkmanager --licenses
+
+    # 安装指定版本的构建工具和平台
+    sdkmanager "build-tools;33.0.2" "platforms;android-33"
+
+    # 添加 SDK 路径到环境变量
+    echo "export ANDROID_HOME=/opt/android-sdk" >> $GITHUB_ENV
+    echo "export PATH=$ANDROID_HOME/tools:$ANDROID_HOME/tools/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_ENV
