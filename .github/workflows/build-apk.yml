@@ -68,54 +68,55 @@ jobs:
           mkdir -p $ANDROID_HOME/tools
           ln -s $ANDROID_HOME/cmdline-tools/latest/bin $ANDROID_HOME/tools/bin
 
-      - name: Configure Buildozer environment
+      - name: Configure Buildozer
         run: |
-          # 完全禁用 Buildozer 的自动 SDK 安装
-          mkdir -p ~/.buildozer/android/platform
-          echo "android.sdk_path = /usr/local/lib/android/sdk" > ~/.buildozer/android/platform/buildozer.ini
-          echo "android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b" >> ~/.buildozer/android/platform/buildozer.ini
-          
-          # 预下载 NDK
-          NDK_DIR="$HOME/.buildozer/android/platform/android-ndk-r25b"
-          if [ ! -d "$NDK_DIR" ]; then
-            wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
-            unzip -q android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
-            rm android-ndk-r25b-linux.zip
-          fi
-
-      - name: Initialize Buildozer
-        run: |
+          # 初始化 Buildozer 环境
           buildozer init
-          # 强制修正所有路径配置
-          sed -i "s|^android.sdk_path =.*|android.sdk_path = /usr/local/lib/android/sdk|" buildozer.spec
-          sed -i "s|^android.ndk_path =.*|android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b|" buildozer.spec
-          sed -i "s|^p4a.branch =.*|p4a.branch = develop|" buildozer.spec
-          sed -i "s|^#android.accept_sdk_license =.*|android.accept_sdk_license = True|" buildozer.spec
-          sed -i "s|^#log_level =.*|log_level = 2|" buildozer.spec
+          
+          # 修正 buildozer.spec 配置
+          cat <<EOF >> buildozer.spec
+          # 强制使用我们安装的 SDK
+          android.sdk_path = /usr/local/lib/android/sdk
+          android.ndk_path = $HOME/.buildozer/android/platform/android-ndk-r25b
+          p4a.branch = develop
+          android.accept_sdk_license = True
+          log_level = 2
+          
+          # 应用配置
+          title = MyApp
+          package.name = pythonapp
+          package.domain = com.example
+          source.dir = .
+          requirements = python3,kivy
+          android.build_tools_version = 33.0.2
+          android.api = 33
+          EOF
 
-      - name: Modify buildozer.spec
+      - name: Pre-download NDK
         run: |
-          sed -i 's/package.name = myapp/package.name = pythonapp/' buildozer.spec
-          sed -i 's/package.domain = org.example/package.domain = com.example/' buildozer.spec
-          sed -i 's/source.dir =.*/source.dir = ./' buildozer.spec
-          sed -i 's/requirements =.*/requirements = python3,kivy/' buildozer.spec
-          sed -i 's/android.build_tools_version =.*/android.build_tools_version = 33.0.2/' buildozer.spec
-          sed -i 's/android.api =.*/android.api = 33/' buildozer.spec
+          mkdir -p ~/.buildozer/android/platform
+          wget https://dl.google.com/android/repository/android-ndk-r25b-linux.zip
+          unzip -q android-ndk-r25b-linux.zip -d ~/.buildozer/android/platform/
+          rm android-ndk-r25b-linux.zip
 
       - name: Build APK
         run: |
-          # 调试信息
-          echo "=== 验证 SDK 路径 ==="
-          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
-          ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager
-          
-          echo "=== 构建环境 ==="
+          # 验证环境
+          echo "=== Buildozer 版本 ==="
           buildozer --version
-          buildozer android --help
           
-          # 构建 APK
-          buildozer -v android debug 2>&1 | tee build.log
-          grep -i "error" build.log && exit 1 || true
+          echo "=== Android 工具路径 ==="
+          ls -la /usr/local/lib/android/sdk/build-tools/33.0.2/
+          
+          # 执行构建（使用完整命令格式）
+          buildozer -v android debug build 2>&1 | tee build.log
+          
+          # 检查错误
+          if grep -q "ERROR:" build.log; then
+            echo "构建过程中发现错误！"
+            cat build.log | grep "ERROR:"
+            exit 1
+          fi
           
           # 收集产物
           mkdir -p artifacts
