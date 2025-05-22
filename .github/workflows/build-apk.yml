@@ -255,11 +255,12 @@ jobs:
           INCLUDE_DIRS="-I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Include/internal -IObjects -IInclude -IPython -I. -I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Include"
           DECIMAL_FLAGS="-I/home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/_decimal/libmpdec -DCONFIG_64=1 -DANSI=1 -DHAVE_UINT128_T=1 -fPIC"
 
-          # 示例编译命令，可根据实际情况调整
+          # 添加错误日记3中的编译命令
           gcc $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE_BUILTIN -c /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/pwdmodule.c -o Modules/pwdmodule.o
           gcc $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE_BUILTIN -c /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/xxsubtype.c -o Modules/xxsubtype.o
-
-          # 处理 _decimal 相关文件
+          gcc -c $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE -o Programs/_freeze_module.o /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Programs/_freeze_module.c
+          gcc -c $COMMON_FLAGS $INCLUDE_DIRS -DPy_BUILD_CORE -o Modules/getpath_noop.o /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/getpath_noop.c
+          
           DECIMAL_FILES=(basearith constants context convolute crt difradix2 fnt fourstep io mpalloc mpdecimal)
           for file in "${DECIMAL_FILES[@]}"; do
             gcc -c $COMMON_FLAGS $INCLUDE_DIRS $DECIMAL_FLAGS -o Modules/_decimal/libmpdec/$file.o /home/runner/work/py-apk/py-apk/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/hostpython3/desktop/hostpython3/Modules/_decimal/libmpdec/$file.c
