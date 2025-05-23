@@ -55,9 +55,7 @@ jobs:
           android.ndk_api = 23
           android.accept_sdk_license = True
           android.archs = arm64-v8a,armeabi-v7a
-          android.sdkmanager = /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager  # 绝对路径
-          android.avdmanager = /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager  # 显式指定 avdmanager 路径
-          
+
           [buildozer]
           log_level = 2
           warn_on_root = False
@@ -75,16 +73,16 @@ jobs:
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 清理并创建目录结构（使用 sudo 确保权限）
+          # 清理并创建目录结构
           sudo rm -rf $ANDROID_HOME
           sudo mkdir -p $ANDROID_HOME/cmdline-tools/latest
           sudo chown -R runner:runner $ANDROID_HOME
           
-          # 下载 Android SDK Command-Line Tools（推荐使用旧版兼容 Buildozer）
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O /tmp/cmdline-tools.zip
+          # 下载并解压命令行工具
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
           
-          # 复制文件到 SDK 目录
+          # 使用rsync安全复制文件
           if [ -d "/tmp/cmdline-tools/cmdline-tools" ]; then
             rsync -a /tmp/cmdline-tools/cmdline-tools/ $ANDROID_HOME/cmdline-tools/latest/
           else
@@ -92,25 +90,26 @@ jobs:
             ls -la /tmp/cmdline-tools
             exit 1
           fi
+          
           rm -rf /tmp/cmdline-tools*
 
           # 设置环境变量
           echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
           
-          # 静默接受许可证（避免管道错误）
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses --silent > /dev/null
+          # 接受许可证
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           
-          # 安装必要组件（包含旧版 tools 组件）
+          # 安装必要组件
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
-            "tools" \  # 兼容 Buildozer 旧路径
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "ndk;25.2.9519653"
 
-          # 验证安装（检查组件是否存在）
-          echo "=== 已安装组件 ==="
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list-installed
+          # 验证安装
+          echo "=== SDK工具验证 ==="
+          ls -la $ANDROID_HOME/cmdline-tools/latest/bin
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list_installed
 
       - name: Set SDKMANAGER path for buildozer
         run: |
@@ -122,43 +121,24 @@ jobs:
           pip install \
             cython==0.29.36 \
             buildozer==1.5.0 \
-            python-for-android==2023.10.1  # 使用兼容的 p4a 版本
+            python-for-android==2024.1.21  # 使用最新稳定版
 
           echo "=== 已安装版本 ==="
           python -c "import Cython; print(f'Cython: {Cython.__version__}')"
           buildozer --version
           p4a --version
 
-      - name: Create symbolic links for legacy paths
-        run: |
-          # 使用 sudo 创建符号链接（解决权限问题）
-          sudo mkdir -p /usr/local/lib/android/sdk/tools/bin
-          sudo ln -s /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
-          sudo ln -s /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager /usr/local/lib/android/sdk/tools/bin/avdmanager
-
-          # 验证符号链接
-          echo "=== 符号链接状态 ==="
-          ls -la /usr/local/lib/android/sdk/tools/bin/
-
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
+          buildozer -v android debug 2>&1 | tee build.log
           
-          # 强制设置环境变量（确保 Buildozer 读取正确路径）
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
-
-          # 运行 Buildozer（增加 -v 调试日志）
-          buildozer -v -v android debug 2>&1 | tee build.log
-          
-          # 检查 APK 生成结果
-          if [ -f bin/*.apk ]; then
+          if ls bin/*.apk 1> /dev/null 2>&1; then
             mkdir -p artifacts
             cp bin/*.apk artifacts/
-            echo "=== APK 构建成功 ==="
           else
             echo "=== 构建失败 ==="
-            tail -n 200 build.log
+            tail -n 100 build.log
             exit 1
           fi
 
@@ -168,10 +148,3 @@ jobs:
         with:
           name: apk-artifact
           path: $GITHUB_WORKSPACE/artifacts/*.apk
-
-      - name: Upload build log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-log
-          path: $GITHUB_WORKSPACE/build.log
