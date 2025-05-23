@@ -42,7 +42,7 @@ jobs:
             tk-dev \
             uuid-dev \
             libnsl-dev \
-            libreadline-dev  # 安装缺失的依赖
+            libreadline-dev
 
       - name: Create buildozer.spec
         run: |
@@ -107,15 +107,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install cython==0.29.36 buildozer==1.5.0 python-for-android==2023.9.16  # 替换为存在的版本
-
-      - name: Try to fix autoconf issues (if possible)
-        run: |
-          cd $GITHUB_WORKSPACE/.buildozer/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds/libffi/arm64-v8a__ndk_target_23/libffi
-          autoupdate  # 尝试运行 autoupdate 修复警告
-          if [ -f configure.ac ]; then
-            echo "m4_pattern_allow([LT_SYS_SYMBOL_USCORE])" >> configure.ac  # 尝试解决未定义宏的问题
-          fi
+          pip install cython==0.29.36 buildozer==1.5.0 python-for-android==2023.9.16
 
       - name: Build APK
         run: |
