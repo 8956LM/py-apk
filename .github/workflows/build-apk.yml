@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: '3.8'
 
-      - name: Install full system dependencies
+      - name: Install system dependencies
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
@@ -45,7 +45,7 @@ jobs:
             libreadline-dev \
             libffi-dev \
             autoconf-archive \
-            patchelf  # 新增 patchelf 工具
+            pkg-config  # 新增 pkg-config 工具
 
       - name: Create buildozer.spec
         run: |
@@ -55,22 +55,23 @@ jobs:
           package.name = pythonapp
           package.domain = com.example
           source.dir = .
-          requirements = python3==3.8.6,kivy,libffi  # 显式声明 libffi 依赖
+          requirements = python3==3.8.6,kivy,libffi==3.4.4  # 指定 libffi 版本
           version = 0.1
           
           android.sdk_path = /usr/local/lib/android/sdk
-          android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
+          android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653  # 固定 NDK 版本
           android.build_tools_version = 33.0.2
           android.api = 33
           android.minapi = 21
           android.ndk_api = 23
           android.accept_sdk_license = True
           android.archs = arm64-v8a,armeabi-v7a
-          android.sdkmanager = /usr/local/lib/android/sdk/tools/bin/sdkmanager
-          android.avdmanager = /usr/local/lib/android/sdk/tools/bin/avdmanager
+          android.bootstrap = sdl2  # 明确指定 bootstrap
+          android.private_storage = true
+          android.use_sdl2 = true
           
           [buildozer]
-          log_level = 5  # 最高日志级别
+          log_level = 2  # 调试日志级别
           warn_on_root = False
           EOF
 
@@ -81,87 +82,39 @@ jobs:
           distribution: 'temurin'
           cache: ''
 
-      - name: Install Android SDK
+      - name: Install Android SDK and NDK
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          sudo rm -rf $ANDROID_HOME
-          sudo mkdir -p $ANDROID_HOME/cmdline-tools/latest
-          sudo chown -R runner:runner $ANDROID_HOME
+          # 安装指定版本 NDK（与 buildozer.spec 一致）
+          sudo mkdir -p $ANDROID_HOME/ndk/25.2.9519653
+          wget -q https://dl.google.com/android/repository/android-ndk-r25b-linux-x86_64.zip -O /tmp/android-ndk.zip
+          unzip -q /tmp/android-ndk.zip -d $ANDROID_HOME/ndk/25.2.9519653
+          rm /tmp/android-ndk.zip
           
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O /tmp/cmdline-tools.zip
-          unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
-          rsync -a /tmp/cmdline-tools/cmdline-tools/ $ANDROID_HOME/cmdline-tools/latest/
-          rm -rf /tmp/cmdline-tools*
-
+          # 安装 SDK 组件
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "tools" "build-tools;33.0.2" "platforms;android-33"
+          
+          # 更新环境变量
           echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
-          
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
-          
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "tools" "build-tools;33.0.2" "platforms;android-33" "ndk;25.2.9519653"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/25.2.9519653" >> $GITHUB_ENV
 
       - name: Create symbolic links
         run: |
-          sudo mkdir -p /usr/local/lib/android/sdk/tools/bin
-          sudo ln -sfn /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
-          sudo ln -sfn /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager /usr/local/lib/android/sdk/tools/bin/avdmanager
+          sudo ln -sfn $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager $ANDROID_HOME/tools/bin/sdkmanager
+          sudo ln -sfn $ANDROID_HOME/cmdline-tools/latest/bin/avdmanager $ANDROID_HOME/tools/bin/avdmanager
 
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install cython==0.29.36 buildozer==1.5.0 python-for-android==2024.1.21
-
-      - name: Pre-init buildozer to trigger dependencies
-        run: |
-          cd $GITHUB_WORKSPACE
-          echo "预初始化 buildozer 以触发依赖下载..."
-          buildozer -v android debug --dir ./.buildozer_init_only --requirements=python3,kivy,libffi clean_deps 2>&1 | tee preinit.log
-          buildozer -v android debug --dir ./.buildozer_init_only --requirements=python3,kivy,libffi init 2>&1 | tee preinit.log
-          
-          # 显示已下载的依赖目录
-          echo "已下载的依赖目录:"
-          find $GITHUB_WORKSPACE/.buildozer_init_only/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds -type d -name "libffi*" -print || true
-
-      - name: Locate and fix libffi
-        run: |
-          echo "等待 buildozer 初始化 libffi 构建（120秒）..."
-          sleep 120  # 延长至2分钟确保下载和提取完成
-          
-          echo "递归查找 libffi 源目录..."
-          # 尝试多种可能的目录结构
-          LIBFFI_DIR=$(find $GITHUB_WORKSPACE/.buildozer/ $GITHUB_WORKSPACE/.buildozer_init_only/ -type d -name "libffi" -exec dirname {} \; 2>/dev/null | head -n 1)
-          
-          if [ -z "$LIBFFI_DIR" ]; then
-            echo "错误：未找到 libffi 构建目录，完整平台目录结构:"
-            find $GITHUB_WORKSPACE/.buildozer/ $GITHUB_WORKSPACE/.buildozer_init_only/ -type d -print 2>/dev/null || true
-            exit 1
-          fi
-          
-          cd $LIBFFI_DIR
-          echo "进入目录: $(pwd)"
-          
-          if [ ! -f configure.ac ]; then
-            echo "错误：configure.ac 未生成，尝试手动生成..."
-            touch configure.ac
-            echo "AC_INIT([libffi], [1.0])" > configure.ac
-            echo "AM_INIT_AUTOMAKE([-Wall -Werror foreign])" >> configure.ac
-            echo "AC_PROG_CC" >> configure.ac
-            echo "AC_CONFIG_FILES([Makefile])" >> configure.ac
-            echo "AC_OUTPUT" >> configure.ac
-          fi
-          
-          echo "修复 autoconf 宏定义..."
-          echo "m4_pattern_allow([LT_SYS_SYMBOL_USCORE])" >> configure.ac
-          echo "m4_pattern_allow([LT_CURRENT])" >> configure.ac
-          autoreconf -fi || {
-            echo "警告：autoreconf 失败，尝试继续..."
-          }
+          # 固定 python-for-android 版本与 buildozer 兼容
+          pip install cython==0.29.36 buildozer==1.5.0 python-for-android==2023.9.16
 
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
-          echo "开始构建（日志级别最高）..."
           buildozer -v android debug 2>&1 | tee build.log
           
           if [ -f bin/*.apk ]; then
@@ -186,10 +139,3 @@ jobs:
         with:
           name: build-log
           path: build.log
-          
-      - name: Upload preinit log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: preinit-log
-          path: preinit.log
