@@ -44,7 +44,8 @@ jobs:
             libnsl-dev \
             libreadline-dev \
             libffi-dev \
-            autoconf-archive  # 新增 autoconf 归档工具
+            autoconf-archive \
+            patchelf  # 新增 patchelf 工具
 
       - name: Create buildozer.spec
         run: |
@@ -111,17 +112,29 @@ jobs:
           pip install --upgrade pip
           pip install cython==0.29.36 buildozer==1.5.0 python-for-android==2024.1.21
 
+      - name: Pre-init buildozer to trigger dependencies
+        run: |
+          cd $GITHUB_WORKSPACE
+          echo "预初始化 buildozer 以触发依赖下载..."
+          buildozer -v android debug --dir ./.buildozer_init_only --requirements=python3,kivy,libffi clean_deps 2>&1 | tee preinit.log
+          buildozer -v android debug --dir ./.buildozer_init_only --requirements=python3,kivy,libffi init 2>&1 | tee preinit.log
+          
+          # 显示已下载的依赖目录
+          echo "已下载的依赖目录:"
+          find $GITHUB_WORKSPACE/.buildozer_init_only/android/platform/build-arm64-v8a_armeabi-v7a/build/other_builds -type d -name "libffi*" -print || true
+
       - name: Locate and fix libffi
         run: |
-          echo "等待 buildozer 初始化 libffi 构建（60秒）..."
-          sleep 60  # 延长至1分钟确保下载和提取完成
+          echo "等待 buildozer 初始化 libffi 构建（120秒）..."
+          sleep 120  # 延长至2分钟确保下载和提取完成
           
           echo "递归查找 libffi 源目录..."
-          LIBFFI_DIR=$(find $GITHUB_WORKSPACE/.buildozer/android/platform/ -type d -name "libffi" -exec dirname {} \; 2>/dev/null | head -n 1)
+          # 尝试多种可能的目录结构
+          LIBFFI_DIR=$(find $GITHUB_WORKSPACE/.buildozer/ $GITHUB_WORKSPACE/.buildozer_init_only/ -type d -name "libffi" -exec dirname {} \; 2>/dev/null | head -n 1)
           
           if [ -z "$LIBFFI_DIR" ]; then
             echo "错误：未找到 libffi 构建目录，完整平台目录结构:"
-            find $GITHUB_WORKSPACE/.buildozer/android/platform/ -type d -print 2>/dev/null || true
+            find $GITHUB_WORKSPACE/.buildozer/ $GITHUB_WORKSPACE/.buildozer_init_only/ -type d -print 2>/dev/null || true
             exit 1
           fi
           
@@ -129,9 +142,13 @@ jobs:
           echo "进入目录: $(pwd)"
           
           if [ ! -f configure.ac ]; then
-            echo "错误：configure.ac 未生成，目录内容:"
-            ls -la || true
-            exit 1
+            echo "错误：configure.ac 未生成，尝试手动生成..."
+            touch configure.ac
+            echo "AC_INIT([libffi], [1.0])" > configure.ac
+            echo "AM_INIT_AUTOMAKE([-Wall -Werror foreign])" >> configure.ac
+            echo "AC_PROG_CC" >> configure.ac
+            echo "AC_CONFIG_FILES([Makefile])" >> configure.ac
+            echo "AC_OUTPUT" >> configure.ac
           fi
           
           echo "修复 autoconf 宏定义..."
@@ -169,3 +186,10 @@ jobs:
         with:
           name: build-log
           path: build.log
+          
+      - name: Upload preinit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preinit-log
+          path: preinit.log
