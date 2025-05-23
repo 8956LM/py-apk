@@ -68,29 +68,54 @@ jobs:
           distribution: 'temurin'
           cache: ''
 
+
+
+
+
       - name: Install Android SDK
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          sudo mkdir -p $ANDROID_HOME
+          # 清理并创建目录结构
+          sudo rm -rf $ANDROID_HOME
+          sudo mkdir -p $ANDROID_HOME/cmdline-tools/latest
           sudo chown -R runner:runner $ANDROID_HOME
           
+          # 下载并解压命令行工具
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
           
-          mkdir -p $ANDROID_HOME/cmdline-tools/latest
-          mv /tmp/cmdline-tools/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
+          # 使用rsync安全复制文件
+          if [ -d "/tmp/cmdline-tools/cmdline-tools" ]; then
+            rsync -a /tmp/cmdline-tools/cmdline-tools/ $ANDROID_HOME/cmdline-tools/latest/
+          else
+            echo "错误：cmdline-tools目录结构不符合预期"
+            ls -la /tmp/cmdline-tools
+            exit 1
+          fi
+          
           rm -rf /tmp/cmdline-tools*
 
+          # 设置环境变量
           echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
+          
+          # 接受许可证
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           
+          # 安装必要组件
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "ndk;25.2.9519653"
+
+          # 验证安装
+          echo "=== SDK工具验证 ==="
+          ls -la $ANDROID_HOME/cmdline-tools/latest/bin
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list_installed
+
+
 
       - name: Install Python dependencies
         run: |
