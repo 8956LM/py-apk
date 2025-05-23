@@ -55,8 +55,8 @@ jobs:
           android.ndk_api = 23
           android.accept_sdk_license = True
           android.archs = arm64-v8a,armeabi-v7a
-          android.sdkmanager = \$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager  # 显式指定 sdkmanager 路径
-
+          android.sdkmanager = /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager  # 绝对路径
+          
           [buildozer]
           log_level = 2
           warn_on_root = False
@@ -129,27 +129,54 @@ jobs:
           buildozer --version
           p4a --version
 
+      - name: Debug Environment
+        run: |
+          echo "=== 环境变量 ==="
+          env | grep -i android
+          
+          echo "=== 路径检查 ==="
+          which sdkmanager
+          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin
+          
+          echo "=== Buildozer 配置 ==="
+          cat $GITHUB_WORKSPACE/buildozer.spec
+          
+          # 尝试手动运行 sdkmanager
+          echo "=== 测试 sdkmanager ==="
+          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --list || true
+
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
-          # 强制设置 sdkmanager 路径，确保 Buildozer 使用正确的路径
-          export ANDROID_SDK_ROOT=$ANDROID_HOME
-          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
           
-          buildozer -v android debug 2>&1 | tee build.log
+          # 强制设置环境变量（覆盖可能的默认值）
+          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
+          export PATH=/usr/local/lib/android/sdk/cmdline-tools/latest/bin:$PATH
+          
+          # 创建符号链接（兼容旧路径）
+          mkdir -p /usr/local/lib/android/sdk/tools/bin
+          ln -s /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
+          ln -s /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager /usr/local/lib/android/sdk/tools/bin/avdmanager
+          
+          # 验证路径
+          echo "使用的 sdkmanager 路径: $(which sdkmanager)"
+          echo "文件存在检查: $(ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager)"
+          
+          # 运行 Buildozer 并保存完整日志
+          buildozer -v -v android debug 2>&1 | tee build.log
           
           if ls bin/*.apk 1> /dev/null 2>&1; then
             mkdir -p artifacts
             cp bin/*.apk artifacts/
           else
             echo "=== 构建失败 ==="
-            tail -n 100 build.log
+            tail -n 200 build.log  # 显示最后200行日志
             exit 1
           fi
 
-      - name: Upload APK artifact
-        if: success()
+      - name: Upload build log
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: apk-artifact
-          path: $GITHUB_WORKSPACE/artifacts/*.apk
+          name: build-log
+          path: $GITHUB_WORKSPACE/build.log
