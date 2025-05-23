@@ -218,25 +218,28 @@ jobs:
             mkdir -p "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches"
             
             # 更新hostpython3补丁以兼容Python 3.11.5
-            cat > "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches/pyconfig_detection.patch" << 'EOPATCH'
-            diff -Nru Python-3.11.5/Lib/site.py Python-3.11.5-new/Lib/site.py
-            --- Python-3.11.5/Lib/site.py    2023-08-24 12:48:38.000000000 -0700
-            +++ Python-3.11.5-new/Lib/site.py        2023-08-24 12:52:46.000000000 -0700
-            @@ -300,6 +300,9 @@
-                 if ENABLE_USER_SITE and os.path.isdir(user_site):
-                     addsitedir(user_site, known_paths)
-             
-            +    # Add the build directory to sys.path
-            +    addsitedir(os.path.dirname(os.path.abspath(__file__)), known_paths)
-            +
-                 # Set sys.argv[0]
-                 if sys.argv[0] == '-c':
-                     # -c option: set sys.argv[0] to '' (issue #18124)
-            EOPATCH
+            cat > "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches/pyconfig_detection.patch" <<'EOPATCH'
+diff -Nru Python-3.11.5/Lib/site.py Python-3.11.5-new/Lib/site.py
+--- Python-3.11.5/Lib/site.py    2023-08-24 12:48:38.000000000 -0700
++++ Python-3.11.5-new/Lib/site.py        2023-08-24 12:52:46.000000000 -0700
+@@ -300,6 +300,9 @@
+     if ENABLE_USER_SITE and os.path.isdir(user_site):
+         addsitedir(user_site, known_paths)
+ 
++    # Add the build directory to sys.path
++    addsitedir(os.path.dirname(os.path.abspath(__file__)), known_paths)
++
+     # Set sys.argv[0]
+     if sys.argv[0] == '-c':
+         # -c option: set sys.argv[0] to '' (issue #18124)
+EOPATCH
             echo "已更新hostpython3补丁文件"
           else
             echo "未找到python-for-android目录，跳过补丁更新"
           fi
+
+
+        
           
       - name: Build APK
         run: |
