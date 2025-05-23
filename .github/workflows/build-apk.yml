@@ -68,10 +68,6 @@ jobs:
           distribution: 'temurin'
           cache: ''
 
-
-
-
-
       - name: Install Android SDK
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
@@ -115,7 +111,9 @@ jobs:
           ls -la $ANDROID_HOME/cmdline-tools/latest/bin
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list_installed
 
-
+      - name: Set SDKMANAGER path for buildozer
+        run: |
+          echo "SDKMANAGER=$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" >> $GITHUB_ENV
 
       - name: Install Python dependencies
         run: |
