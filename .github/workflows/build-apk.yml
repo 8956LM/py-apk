@@ -42,8 +42,7 @@ jobs:
             tk-dev \
             uuid-dev \
             libnsl-dev \
-            libreadline-dev \
-            autoupdate  # 新增 autoupdate 工具
+            libreadline-dev
 
       - name: Create buildozer.spec
         run: |
@@ -68,7 +67,7 @@ jobs:
           android.avdmanager = /usr/local/lib/android/sdk/tools/bin/avdmanager
           
           [buildozer]
-          log_level = 4  # 提高日志级别以便排查
+          log_level = 4
           warn_on_root = False
           EOF
 
@@ -108,16 +107,15 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          # 使用存在的 python-for-android 版本，如 2023.10.1 或最新稳定版
           pip install cython==0.29.36 buildozer==1.5.0 python-for-android==2023.10.1
 
-      - name: Fix libffi autoconf issues (关键修复步骤)
+      - name: Fix libffi autoconf issues
         run: |
-          # 等待 buildozer 生成 libffi 构建目录
-          sleep 10  # 确保目录生成
+          # 等待 buildozer 初始化目录
+          sleep 10
           
-          # 定位 libffi 目录（根据 buildozer 日志中的实际路径调整）
-          LIBFFI_DIR=$(find $GITHUB_WORKSPACE/.buildozer/android/platform/ -name libffi -type d | head -n 1)
+          # 动态查找 libffi 目录
+          LIBFFI_DIR=$(find $GITHUB_WORKSPACE/.buildozer/android/platform/ -name libffi -type d -print -quit)
           
           if [ -z "$LIBFFI_DIR" ]; then
             echo "错误：未找到 libffi 目录"
@@ -127,11 +125,11 @@ jobs:
           cd $LIBFFI_DIR
           echo "当前目录: $(pwd)"
           
-          # 运行 autoupdate 修复过时宏
-          autoupdate -i || true
-          
-          # 添加宏允许（解决 LT_SYS_SYMBOL_USCORE 未定义）
+          # 尝试修复 autoconf 问题
           echo "m4_pattern_allow([LT_SYS_SYMBOL_USCORE])" >> configure.ac
+          echo "m4_pattern_allow([LT_CURRENT])" >> configure.ac
+          echo "m4_pattern_allow([LT_AGE])" >> configure.ac
+          echo "m4_pattern_allow([LT_REVISION])" >> configure.ac
           
           # 重新生成配置文件
           autoreconf -fi || true
