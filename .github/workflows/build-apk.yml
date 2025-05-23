@@ -214,8 +214,11 @@ jobs:
           # 修复hostpython3补丁问题
           P4A_DIR="$GITHUB_WORKSPACE/.buildozer/android/platform/python-for-android"
           if [ -d "$P4A_DIR" ]; then
+            # 创建补丁目录（如果不存在）
+            mkdir -p "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches"
+            
             # 更新hostpython3补丁以兼容Python 3.11.5
-            cat <<EOF > "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches/pyconfig_detection.patch"
+            cat > "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches/pyconfig_detection.patch" << 'EOPATCH'
             diff -Nru Python-3.11.5/Lib/site.py Python-3.11.5-new/Lib/site.py
             --- Python-3.11.5/Lib/site.py    2023-08-24 12:48:38.000000000 -0700
             +++ Python-3.11.5-new/Lib/site.py        2023-08-24 12:52:46.000000000 -0700
@@ -229,12 +232,12 @@ jobs:
                  # Set sys.argv[0]
                  if sys.argv[0] == '-c':
                      # -c option: set sys.argv[0] to '' (issue #18124)
-            EOF
+            EOPATCH
             echo "已更新hostpython3补丁文件"
           else
             echo "未找到python-for-android目录，跳过补丁更新"
           fi
-
+          
       - name: Build APK
         run: |
           mkdir -p $GITHUB_WORKSPACE/bin
