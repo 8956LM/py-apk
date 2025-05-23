@@ -17,7 +17,7 @@ jobs:
         with:
           python-version: '3.8'
 
-      - name: Install system dependencies
+      - name: Install full system dependencies
         run: |
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
@@ -43,7 +43,8 @@ jobs:
             uuid-dev \
             libnsl-dev \
             libreadline-dev \
-            libffi-dev  # 新增 libffi 开发依赖
+            libffi-dev \
+            autoconf-archive  # 新增 autoconf 归档工具
 
       - name: Create buildozer.spec
         run: |
@@ -53,7 +54,7 @@ jobs:
           package.name = pythonapp
           package.domain = com.example
           source.dir = .
-          requirements = python3==3.8.6,kivy
+          requirements = python3==3.8.6,kivy,libffi  # 显式声明 libffi 依赖
           version = 0.1
           
           android.sdk_path = /usr/local/lib/android/sdk
@@ -68,7 +69,7 @@ jobs:
           android.avdmanager = /usr/local/lib/android/sdk/tools/bin/avdmanager
           
           [buildozer]
-          log_level = 4
+          log_level = 5  # 最高日志级别
           warn_on_root = False
           EOF
 
@@ -110,49 +111,40 @@ jobs:
           pip install --upgrade pip
           pip install cython==0.29.36 buildozer==1.5.0 python-for-android==2024.1.21
 
-      - name: Fix libffi autoconf issues
+      - name: Locate and fix libffi
         run: |
-          echo "等待 buildozer 初始化目录..."
-          sleep 30  # 延长等待时间确保目录生成
+          echo "等待 buildozer 初始化 libffi 构建（60秒）..."
+          sleep 60  # 延长至1分钟确保下载和提取完成
           
-          echo "查找 libffi 目录..."
-          # 通用查找路径（兼容不同构建路径变化）
-          LIBFFI_DIR=$(find $GITHUB_WORKSPACE/.buildozer/android/platform/ -type d -name libffi -print -quit 2>/dev/null)
-          
-          if [ -z "$LIBFFI_DIR" ]; then
-            echo "错误：未找到 libffi 目录，尝试全路径查找..."
-            LIBFFI_DIR=$(find $GITHUB_WORKSPACE/.buildozer/android/platform/ -type d -name "libffi" -exec dirname {} \; 2>/dev/null | head -n 1)
-          fi
+          echo "递归查找 libffi 源目录..."
+          LIBFFI_DIR=$(find $GITHUB_WORKSPACE/.buildozer/android/platform/ -type d -name "libffi" -exec dirname {} \; 2>/dev/null | head -n 1)
           
           if [ -z "$LIBFFI_DIR" ]; then
-            echo "错误：libffi 目录仍未找到，输出平台目录结构:"
+            echo "错误：未找到 libffi 构建目录，完整平台目录结构:"
             find $GITHUB_WORKSPACE/.buildozer/android/platform/ -type d -print 2>/dev/null || true
             exit 1
           fi
           
           cd $LIBFFI_DIR
-          echo "当前目录: $(pwd)"
+          echo "进入目录: $(pwd)"
           
           if [ ! -f configure.ac ]; then
-            echo "错误：configure.ac 文件不存在，目录内容:"
+            echo "错误：configure.ac 未生成，目录内容:"
             ls -la || true
             exit 1
           fi
           
-          echo "添加宏允许..."
+          echo "修复 autoconf 宏定义..."
           echo "m4_pattern_allow([LT_SYS_SYMBOL_USCORE])" >> configure.ac
           echo "m4_pattern_allow([LT_CURRENT])" >> configure.ac
-          echo "m4_pattern_allow([LT_AGE])" >> configure.ac
-          echo "m4_pattern_allow([LT_REVISION])" >> configure.ac
-          
-          cp configure.ac configure.ac.bak
-          autoreconf -fi || true
-          echo "configure.ac 内容:"
-          cat configure.ac || true
+          autoreconf -fi || {
+            echo "警告：autoreconf 失败，尝试继续..."
+          }
 
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
+          echo "开始构建（日志级别最高）..."
           buildozer -v android debug 2>&1 | tee build.log
           
           if [ -f bin/*.apk ]; then
