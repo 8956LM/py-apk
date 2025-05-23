@@ -12,26 +12,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Debug - List project directory
-        run: |
-          echo "GITHUB_WORKSPACE: $GITHUB_WORKSPACE"
-          ls -la $GITHUB_WORKSPACE
+      - name: Setup Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
 
       - name: Clean environment
         run: |
           sudo rm -rf /usr/local/lib/android/sdk
           rm -rf $GITHUB_WORKSPACE/.buildozer $GITHUB_WORKSPACE/bin
           echo "环境清理完成"
-
-      - name: Set up Python 3.8 (强制兼容版本)
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.8'  # 关键修改：使用兼容版本
-
-      - name: Enable i386 architecture
-        run: |
-          sudo dpkg --add-architecture i386
-          echo "i386 架构已启用"
 
       - name: Install system dependencies
         run: |
@@ -47,24 +37,17 @@ jobs:
             libx11-6:i386 \
             gcc-multilib \
             g++-multilib \
-            autogen \
             autoconf \
             automake \
             libtool \
-            libtool-bin \
             openjdk-11-jdk \
-            ccache \
-            python3.8-dev  # 明确安装Python 3.8开发包
+            python3.8-dev
 
-          # 验证关键依赖
-          echo "=== 关键工具版本 ==="
+          echo "=== 验证安装 ==="
           python3 --version
-          autoconf --version
-          automake --version
-          libtool --version
           java -version
 
-      - name: Create buildozer.spec (兼容配置)
+      - name: Create buildozer.spec
         run: |
           cat <<EOF > $GITHUB_WORKSPACE/buildozer.spec
           [app]
@@ -72,10 +55,9 @@ jobs:
           package.name = pythonapp
           package.domain = com.example
           source.dir = .
-          requirements = python3==3.8.6,kivy  # 强制使用兼容版本
+          requirements = python3==3.8.6,kivy
           version = 0.1
           
-          # Android配置
           android.sdk_path = /usr/local/lib/android/sdk
           android.ndk_path = /usr/local/lib/android/sdk/ndk/25.2.9519653
           android.build_tools_version = 33.0.2
@@ -84,7 +66,6 @@ jobs:
           android.ndk_api = 23
           android.accept_sdk_license = True
           android.archs = arm64-v8a,armeabi-v7a
-          android.ndk_version = 25b  # 明确指定NDK版本
 
           [buildozer]
           log_level = 2
@@ -96,9 +77,9 @@ jobs:
         with:
           java-version: '11'
           distribution: 'temurin'
-          cache: 'gradle'
+          cache: ''
 
-      - name: Install Android SDK (优化安装)
+      - name: Install Android SDK
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
@@ -116,89 +97,60 @@ jobs:
 
           echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_ENV
 
-          # 自动接受所有许可证
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1
 
-          # 安装必要组件（带进度显示）
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "ndk;25.2.9519653" | grep -v "="
 
-          echo "Android SDK 安装完成"
-
       - name: Configure NDK
         run: |
           ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.2.9519653
           echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-          echo "ANDROID_NDK_ROOT=$ANDROID_NDK_HOME" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-          
-          # 验证NDK安装
           $ANDROID_NDK_HOME/ndk-build --version
-          echo "NDK 25.2.9519653 配置完成"
 
-      - name: Install Buildozer with compatible versions
+      - name: Install Buildozer
         run: |
-          # 安装特定版本确保兼容性
           pip install --upgrade pip
           pip install \
             cython==0.29.36 \
             buildozer==1.5.0 \
-            python-for-android==2023.10.06  # 稳定版本
-
-          echo "工具版本："
-          buildozer --version
-          p4a --version
-          cython --version
+            python-for-android==2023.10.06
 
       - name: Disable problematic patches
         run: |
-          # 禁用可能导致问题的补丁
           P4A_DIR="$GITHUB_WORKSPACE/.buildozer/android/platform/python-for-android"
           if [ -d "$P4A_DIR" ]; then
-            echo "禁用不兼容的补丁..."
             mkdir -p "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches"
-            echo "Disabled for Python 3.8 compatibility" > \
-              "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches/.disable"
-          else
-            echo "未找到python-for-android目录，跳过补丁配置"
+            echo "Disabled for compatibility" > "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches/.disable"
           fi
 
-      - name: Clean previous builds
+      - name: Clean build
         run: |
           buildozer android clean
           rm -rf $GITHUB_WORKSPACE/.buildozer/android/platform/build-*
-          echo "构建缓存已清理"
 
-      - name: Build APK (优化构建)
+      - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
-          
-          # 设置构建环境变量
           export PYTHON_FOR_ANDROID_IGNORE_PATCHES=1
-          export BUILD_FAIL_LOG=build_fail.log
           
-          echo "=== 开始构建 ==="
-          if buildozer -v android debug 2>&1 | tee $BUILD_FAIL_LOG; then
+          if buildozer -v android debug 2>&1 | tee build.log; then
             echo "构建成功"
             mkdir -p artifacts
             cp $GITHUB_WORKSPACE/bin/*.apk artifacts/
           else
             echo "=== 构建失败 ==="
-            echo "最后100行错误日志："
-            tail -n 100 $BUILD_FAIL_LOG
-            echo "常见问题："
-            echo "1. 检查NDK版本是否匹配 (25.2.9519653)"
-            echo "2. 确认Python版本为3.8.x"
-            echo "3. 验证SDK组件是否安装完整"
+            tail -n 100 build.log
             exit 1
           fi
 
-      - name: Upload artifacts
+      - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: apk-artifacts
+          name: apk-artifact
           path: $GITHUB_WORKSPACE/artifacts/*.apk
