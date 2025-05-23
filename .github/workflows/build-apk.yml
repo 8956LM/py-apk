@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 明确指定Ubuntu版本
 
     steps:
       - name: Checkout code
@@ -21,19 +21,20 @@ jobs:
         run: |
           sudo rm -rf /usr/local/lib/android/sdk
           rm -rf $GITHUB_WORKSPACE/.buildozer $GITHUB_WORKSPACE/bin
-          echo "环境清理完成"
 
-      - name: Install system dependencies
+      - name: Enable multiarch and install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y \
+          # 必须先启用multiarch
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -y
+          
+          # Ubuntu 24.04使用冒号(:)作为架构分隔符
+          sudo apt-get install -y \
             unzip \
             libc6:i386 \
-            lib32stdc++6 \
-            lib32z1 \
-            zlib1g-dev \
             libncurses6:i386 \
-            libstdc++-12-dev \
-            libstdc++-12-dev:i386 \
+            libstdc++6:i386 \
+            libz1:i386 \
             libx11-6:i386 \
             gcc-multilib \
             g++-multilib \
@@ -44,8 +45,7 @@ jobs:
             python3.8-dev
 
           echo "=== 验证安装 ==="
-          python3 --version
-          java -version
+          dpkg -l | grep -E "libc6:i386|libncurses6:i386|libstdc++6:i386"
 
       - name: Create buildozer.spec
         run: |
@@ -83,7 +83,6 @@ jobs:
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> $GITHUB_ENV
           
           sudo mkdir -p $ANDROID_HOME
           sudo chown -R runner:runner $ANDROID_HOME
@@ -95,22 +94,14 @@ jobs:
           mv /tmp/cmdline-tools/cmdline-tools/* $ANDROID_HOME/cmdline-tools/latest/
           rm -rf /tmp/cmdline-tools*
 
-          echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$PATH" >> $GITHUB_ENV
-
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME --licenses > /dev/null 2>&1
-
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --sdk_root=$ANDROID_HOME \
+          echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
+          
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "build-tools;33.0.2" \
             "platforms;android-33" \
-            "ndk;25.2.9519653" | grep -v "="
-
-      - name: Configure NDK
-        run: |
-          ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/25.2.9519653
-          echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-          echo "ANDROID_NDK=$ANDROID_NDK_HOME" >> $GITHUB_ENV
-          $ANDROID_NDK_HOME/ndk-build --version
+            "ndk;25.2.9519653"
 
       - name: Install Buildozer
         run: |
@@ -120,28 +111,14 @@ jobs:
             buildozer==1.5.0 \
             python-for-android==2023.10.06
 
-      - name: Disable problematic patches
-        run: |
-          P4A_DIR="$GITHUB_WORKSPACE/.buildozer/android/platform/python-for-android"
-          if [ -d "$P4A_DIR" ]; then
-            mkdir -p "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches"
-            echo "Disabled for compatibility" > "$P4A_DIR/pythonforandroid/recipes/hostpython3/patches/.disable"
-          fi
-
-      - name: Clean build
-        run: |
-          buildozer android clean
-          rm -rf $GITHUB_WORKSPACE/.buildozer/android/platform/build-*
-
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
-          export PYTHON_FOR_ANDROID_IGNORE_PATCHES=1
+          buildozer -v android debug 2>&1 | tee build.log
           
-          if buildozer -v android debug 2>&1 | tee build.log; then
-            echo "构建成功"
+          if [ -f bin/*.apk ]; then
             mkdir -p artifacts
-            cp $GITHUB_WORKSPACE/bin/*.apk artifacts/
+            cp bin/*.apk artifacts/
           else
             echo "=== 构建失败 ==="
             tail -n 100 build.log
