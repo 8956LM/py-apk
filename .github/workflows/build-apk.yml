@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04  # 明确指定Ubuntu版本
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout code
@@ -17,18 +17,10 @@ jobs:
         with:
           python-version: '3.8'
 
-      - name: Clean environment
+      - name: Install system dependencies
         run: |
-          sudo rm -rf /usr/local/lib/android/sdk
-          rm -rf $GITHUB_WORKSPACE/.buildozer $GITHUB_WORKSPACE/bin
-
-      - name: Enable multiarch and install dependencies
-        run: |
-          # 必须先启用multiarch
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
-          
-          # Ubuntu 24.04使用冒号(:)作为架构分隔符
           sudo apt-get install -y \
             unzip \
             libc6:i386 \
@@ -43,9 +35,6 @@ jobs:
             libtool \
             openjdk-11-jdk \
             python3.8-dev
-
-          echo "=== 验证安装 ==="
-          dpkg -l | grep -E "libc6:i386|libncurses6:i386|libstdc++6:i386"
 
       - name: Create buildozer.spec
         run: |
@@ -103,20 +92,25 @@ jobs:
             "platforms;android-33" \
             "ndk;25.2.9519653"
 
-      - name: Install Buildozer
+      - name: Install Python dependencies
         run: |
           pip install --upgrade pip
           pip install \
             cython==0.29.36 \
             buildozer==1.5.0 \
-            python-for-android==2023.10.06
+            python-for-android==2024.1.21  # 使用最新稳定版
+
+          echo "=== 已安装版本 ==="
+          python -c "import Cython; print(f'Cython: {Cython.__version__}')"
+          buildozer --version
+          p4a --version
 
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
           buildozer -v android debug 2>&1 | tee build.log
           
-          if [ -f bin/*.apk ]; then
+          if ls bin/*.apk 1> /dev/null 2>&1; then
             mkdir -p artifacts
             cp bin/*.apk artifacts/
           else
