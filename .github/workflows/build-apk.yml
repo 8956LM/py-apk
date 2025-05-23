@@ -55,8 +55,8 @@ jobs:
           android.ndk_api = 23
           android.accept_sdk_license = True
           android.archs = arm64-v8a,armeabi-v7a
-          android.sdkmanager = /usr/local/lib/android/sdk/tools/bin/sdkmanager  # 固定旧路径
-          android.avdmanager = /usr/local/lib/android/sdk/tools/bin/avdmanager    # 固定旧路径
+          android.sdkmanager = /usr/local/lib/android/sdk/tools/bin/sdkmanager
+          android.avdmanager = /usr/local/lib/android/sdk/tools/bin/avdmanager
           
           [buildozer]
           log_level = 3
@@ -70,79 +70,55 @@ jobs:
           distribution: 'temurin'
           cache: ''
 
-      - name: Install Android SDK (旧版工具兼容)
+      - name: Install Android SDK
         run: |
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 清理并创建目录（使用 sudo 确保权限）
           sudo rm -rf $ANDROID_HOME
           sudo mkdir -p $ANDROID_HOME/cmdline-tools/latest
           sudo chown -R runner:runner $ANDROID_HOME
           
-          # 下载旧版 SDK 命令行工具（版本 8512546 包含 tools 目录）
           wget -q https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
           rsync -a /tmp/cmdline-tools/cmdline-tools/ $ANDROID_HOME/cmdline-tools/latest/
           rm -rf /tmp/cmdline-tools*
 
-          # 设置环境变量
           echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
           
-          # 接受许可证（非交互模式）
-          echo "y" | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           
-          # 安装必要组件（包含旧版 tools 和新版组件）
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
-            "platform-tools" \
-            "tools" \          # 旧版 tools 组件（包含 sdkmanager 旧路径）
-            "build-tools;33.0.2" \
-            "platforms;android-33" \
-            "ndk;25.2.9519653"
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platform-tools" "tools" "build-tools;33.0.2" "platforms;android-33" "ndk;25.2.9519653"
 
-      - name: 创建强制符号链接（避免路径变更）
+      - name: Create symbolic links
         run: |
-          # 确保旧路径符号链接存在（覆盖任何已有文件）
-          sudo ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
-          sudo ln -sf /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager /usr/local/lib/android/sdk/tools/bin/avdmanager
-          
-          # 验证链接（失败则终止构建）
-          if [! -e /usr/local/lib/android/sdk/tools/bin/sdkmanager ]; then
-            echo "错误：符号链接创建失败"
-            exit 1
-          fi
+          sudo mkdir -p /usr/local/lib/android/sdk/tools/bin
+          sudo ln -sfn /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
+          sudo ln -sfn /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager /usr/local/lib/android/sdk/tools/bin/avdmanager
 
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install \
-            cython==0.29.36 \        # 固定 Cython 版本
-            buildozer==1.5.0 \       # 固定 Buildozer 版本
-            python-for-android==2023.10.1  # 固定 p4a 版本，兼容旧路径逻辑
+          pip install cython==0.29.36 buildozer==1.5.0 python-for-android==2023.10.1
 
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
-          # 显式指定环境变量，避免继承旧配置
-          ANDROID_SDK_ROOT=/usr/local/lib/android/sdk \
-          buildozer -v -v android debug 2>&1 | tee build.log
+          buildozer -v android debug 2>&1 | tee build.log
           
-          # 检查 APK 生成
           if [ -f bin/*.apk ]; then
-            echo "=== APK 构建成功 ==="
             mkdir -p artifacts
             cp bin/*.apk artifacts/
           else
-            echo "=== 构建失败 ==="
             cat build.log
             exit 1
           fi
 
-      - name: Upload artifacts
+      - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: apk-artifacts
+          name: apk-artifact
           path: artifacts/*.apk
 
       - name: Upload build log
