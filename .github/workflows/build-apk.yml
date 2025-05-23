@@ -55,6 +55,7 @@ jobs:
           android.ndk_api = 23
           android.accept_sdk_license = True
           android.archs = arm64-v8a,armeabi-v7a
+          android.sdkmanager = \$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager  # 显式指定 sdkmanager 路径
 
           [buildozer]
           log_level = 2
@@ -131,6 +132,10 @@ jobs:
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
+          # 强制设置 sdkmanager 路径，确保 Buildozer 使用正确的路径
+          export ANDROID_SDK_ROOT=$ANDROID_HOME
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
+          
           buildozer -v android debug 2>&1 | tee build.log
           
           if ls bin/*.apk 1> /dev/null 2>&1; then
