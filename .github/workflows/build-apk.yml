@@ -55,7 +55,8 @@ jobs:
           android.ndk_api = 23
           android.accept_sdk_license = True
           android.archs = arm64-v8a,armeabi-v7a
-          android.sdkmanager = /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager  # 绝对路径
+          android.sdkmanager = /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
+          android.avdmanager = /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager  # 新增
           
           [buildozer]
           log_level = 2
@@ -74,43 +75,26 @@ jobs:
           ANDROID_HOME=/usr/local/lib/android/sdk
           echo "ANDROID_HOME=$ANDROID_HOME" >> $GITHUB_ENV
           
-          # 清理并创建目录结构
           sudo rm -rf $ANDROID_HOME
           sudo mkdir -p $ANDROID_HOME/cmdline-tools/latest
           sudo chown -R runner:runner $ANDROID_HOME
           
-          # 下载并解压命令行工具
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip -O /tmp/cmdline-tools.zip
+          # 下载旧版 SDK Command-Line Tools（可选）
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/cmdline-tools
           
-          # 使用rsync安全复制文件
-          if [ -d "/tmp/cmdline-tools/cmdline-tools" ]; then
-            rsync -a /tmp/cmdline-tools/cmdline-tools/ $ANDROID_HOME/cmdline-tools/latest/
-          else
-            echo "错误：cmdline-tools目录结构不符合预期"
-            ls -la /tmp/cmdline-tools
-            exit 1
-          fi
-          
+          rsync -a /tmp/cmdline-tools/cmdline-tools/ $ANDROID_HOME/cmdline-tools/latest/
           rm -rf /tmp/cmdline-tools*
-
-          # 设置环境变量
-          echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
           
-          # 接受许可证
+          echo "PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH" >> $GITHUB_ENV
           yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null
           
-          # 安装必要组件
           $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
+            "tools" \  # 新增旧版 tools 组件
             "build-tools;33.0.2" \
             "platforms;android-33" \
             "ndk;25.2.9519653"
-
-          # 验证安装
-          echo "=== SDK工具验证 ==="
-          ls -la $ANDROID_HOME/cmdline-tools/latest/bin
-          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --list_installed
 
       - name: Set SDKMANAGER path for buildozer
         run: |
@@ -122,55 +106,36 @@ jobs:
           pip install \
             cython==0.29.36 \
             buildozer==1.5.0 \
-            python-for-android==2024.1.21  # 使用最新稳定版
-
-          echo "=== 已安装版本 ==="
-          python -c "import Cython; print(f'Cython: {Cython.__version__}')"
-          buildozer --version
-          p4a --version
+            python-for-android==2024.1.21
 
       - name: Debug Environment
         run: |
           echo "=== 环境变量 ==="
           env | grep -i android
-          
-          echo "=== 路径检查 ==="
+          echo "=== sdkmanager 路径 ==="
           which sdkmanager
-          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin
-          
-          echo "=== Buildozer 配置 ==="
-          cat $GITHUB_WORKSPACE/buildozer.spec
-          
-          # 尝试手动运行 sdkmanager
-          echo "=== 测试 sdkmanager ==="
-          /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager --list || true
+          ls -la /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager
 
       - name: Build APK
         run: |
           cd $GITHUB_WORKSPACE
           
-          # 强制设置环境变量（覆盖可能的默认值）
-          export ANDROID_SDK_ROOT=/usr/local/lib/android/sdk
-          export PATH=/usr/local/lib/android/sdk/cmdline-tools/latest/bin:$PATH
+          # 提升权限创建符号链接
+          sudo mkdir -p /usr/local/lib/android/sdk/tools/bin
+          sudo ln -s /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
+          sudo ln -s /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager /usr/local/lib/android/sdk/tools/bin/avdmanager
           
-          # 创建符号链接（兼容旧路径）
-          mkdir -p /usr/local/lib/android/sdk/tools/bin
-          ln -s /usr/local/lib/android/sdk/cmdline-tools/latest/bin/sdkmanager /usr/local/lib/android/sdk/tools/bin/sdkmanager
-          ln -s /usr/local/lib/android/sdk/cmdline-tools/latest/bin/avdmanager /usr/local/lib/android/sdk/tools/bin/avdmanager
+          echo "=== 符号链接状态 ==="
+          ls -la /usr/local/lib/android/sdk/tools/bin/
           
-          # 验证路径
-          echo "使用的 sdkmanager 路径: $(which sdkmanager)"
-          echo "文件存在检查: $(ls -la /usr/local/lib/android/sdk/tools/bin/sdkmanager)"
-          
-          # 运行 Buildozer 并保存完整日志
+          export PATH=$ANDROID_HOME/cmdline-tools/latest/bin:$PATH
           buildozer -v -v android debug 2>&1 | tee build.log
           
-          if ls bin/*.apk 1> /dev/null 2>&1; then
-            mkdir -p artifacts
+          if ls bin/*.apk; then
             cp bin/*.apk artifacts/
           else
             echo "=== 构建失败 ==="
-            tail -n 200 build.log  # 显示最后200行日志
+            cat build.log
             exit 1
           fi
 
@@ -179,4 +144,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-log
-          path: $GITHUB_WORKSPACE/build.log
+          path: build.log
